@@ -548,6 +548,7 @@
         let isSkLocked = false;
 
         // 大會總表看板狀態
+        let dbViewMode = 'full'; // 'full' (15欄完整), 'compact' (手機精簡8欄)
         let dbFilterGender = 'all'; // 'all', '男', '女'
         let dbSearchKeyword = '';
         let isAutoScrolling = false;
@@ -567,6 +568,11 @@
             const queryLane = urlParams.get('lane');
             const queryGame = urlParams.get('game');
             const queryRoom = urlParams.get('room');
+            const queryMode = urlParams.get('mode');
+
+            if (queryMode === 'compact' || queryMode === 'full') {
+                dbViewMode = queryMode;
+            }
 
             if (queryRoom && queryRoom.trim() !== '') {
                 cloudRoomId = queryRoom.trim();
@@ -2421,11 +2427,31 @@
         }
 
         // ==========================================
+        // ==========================================
         // 大會即時總表看板 (Live Dashboard - 明亮清晰大表)
         // ==========================================
+        function setDashboardViewMode(mode) {
+            dbViewMode = mode;
+            renderCurrentView();
+        }
+
+        function scrollDashboardTable(direction) {
+            const container = document.getElementById('dashboard-scroll-container');
+            const wrapper = document.getElementById('dashboard-table-wrapper');
+            const target = container || wrapper;
+            if (!target) return;
+            if (direction === 'left') {
+                target.scrollTo({ left: 0, behavior: 'smooth' });
+                if (wrapper) wrapper.scrollTo({ left: 0, behavior: 'smooth' });
+            } else if (direction === 'right') {
+                target.scrollTo({ left: 1600, behavior: 'smooth' });
+                if (wrapper) wrapper.scrollTo({ left: 1600, behavior: 'smooth' });
+            }
+        }
+
         function getDashboardHTML() {
             return `
-                <div class="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
+                <div class="min-h-screen bg-slate-50 text-slate-800 flex flex-col w-full max-w-full overflow-x-hidden">
                     
                     <!-- 總表頂部 Header (明亮大器) -->
                     <div class="bg-white border-b border-slate-200 p-4 sm:p-6 shadow-sm shrink-0 z-20">
@@ -2456,13 +2482,19 @@
                             <!-- 篩選器與控制工具列 -->
                             <div class="flex flex-wrap items-center gap-2.5 no-print">
                                 
+                                <!-- 檢視模式切換 (完整大表 vs 手機精簡) -->
+                                <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-black">
+                                    <button onclick="setDashboardViewMode('full')" class="px-3 py-1.5 rounded-lg transition-all ${dbViewMode === 'full' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}">📊 完整 15 欄</button>
+                                    <button onclick="setDashboardViewMode('compact')" class="px-3 py-1.5 rounded-lg transition-all ${dbViewMode === 'compact' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}">📱 手機精簡 (8欄)</button>
+                                </div>
+
                                 <!-- 搜尋框 -->
                                 <div class="relative">
                                     <input type="text" id="db-search" 
                                            value="${dbSearchKeyword}" 
                                            oninput="filterDashboardSearch(this.value)" 
                                            placeholder="搜尋姓名 / 社團 / 道號..." 
-                                           class="bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 text-xs sm:text-sm rounded-xl px-3 py-2 pl-8 focus:border-blue-500 focus:bg-white outline-none w-48 sm:w-56 transition-all shadow-inner">
+                                           class="bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 text-xs sm:text-sm rounded-xl px-3 py-2 pl-8 focus:border-blue-500 focus:bg-white outline-none w-44 sm:w-52 transition-all shadow-inner">
                                     <span class="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
                                 </div>
 
@@ -2500,37 +2532,44 @@
                         </div>
                     </div>
 
-                    <!-- 總表主表格容器 (支援手機平滑左右滑動與上下滾動) -->
-                    <div id="dashboard-scroll-container" class="flex-1 overflow-x-auto overflow-y-auto p-2 sm:p-4 bg-slate-100 touch-scroll-x">
-                        
-                        <!-- 手機端左右滑動提示條 (手機專用提示) -->
-                        <div class="lg:hidden mb-2.5 bg-blue-50 border border-blue-200 text-blue-900 px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-between shadow-sm">
-                            <span class="flex items-center gap-1.5">
-                                <span class="text-base animate-pulse">👈👉</span> 手機請直接向右滑動，查看 15 欄完整成績與總分
+                    <!-- 手機專用頂部浮動導航切換列 -->
+                    <div class="lg:hidden bg-slate-900 text-white p-3 shadow-md shrink-0 flex flex-col gap-2 border-b border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-slate-300 flex items-center gap-1">
+                                <span>📱</span> 檢視模式：
                             </span>
-                            <span class="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">15 欄位</span>
+                            <div class="flex bg-slate-800 p-0.5 rounded-lg border border-slate-700">
+                                <button onclick="setDashboardViewMode('compact')" class="px-3 py-1 text-xs font-black rounded-md transition-all ${dbViewMode === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400'}">
+                                    📱 手機精簡 (8欄)
+                                </button>
+                                <button onclick="setDashboardViewMode('full')" class="px-3 py-1 text-xs font-black rounded-md transition-all ${dbViewMode === 'full' ? 'bg-emerald-600 text-white' : 'text-slate-400'}">
+                                    📊 完整 15 欄 (滑動)
+                                </button>
+                            </div>
                         </div>
 
-                        <div class="max-w-[1850px] mx-auto bg-white rounded-2xl shadow-md border border-slate-200 overflow-x-auto touch-scroll-x">
-                            <table class="w-full text-left border-collapse whitespace-nowrap min-w-[1300px] print-table">
-                                <thead class="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-sm text-xs font-black border-b border-slate-300">
-                                    <tr class="divide-x divide-slate-200">
-                                        <th class="p-3 w-16 text-center text-slate-800">球道</th>
-                                        <th class="p-3 w-14 text-center text-slate-800">序號</th>
-                                        <th class="p-3 text-center min-w-[130px] text-slate-800">所屬社</th>
-                                        <th class="p-3 text-left min-w-[90px] text-slate-800">姓名</th>
-                                        <th class="p-3 text-center w-16 text-slate-800">職稱</th>
-                                        <th class="p-3 text-left min-w-[100px] text-slate-800">社名</th>
-                                        <th class="p-3 text-center w-14 text-slate-800">性別</th>
-                                        <th class="p-3 text-center w-16 text-slate-800">身份</th>
-                                        <th class="p-3 text-center w-20 text-slate-800">第 1 局</th>
-                                        <th class="p-3 text-center w-20 text-slate-800">第 2 局</th>
-                                        <th class="p-3 text-center w-20 text-slate-800">第 3 局</th>
-                                        <th class="p-3 text-center w-16 text-pink-700 bg-pink-50/80 font-black">加分</th>
-                                        <th class="p-3 text-center w-24 text-blue-700 bg-blue-50/80 text-base font-black">總計</th>
-                                        <th class="p-3 text-center w-24 text-amber-700">火雞 🦃</th>
-                                        <th class="p-3 text-center w-24 text-pink-700">霸王花 🌺</th>
-                                    </tr>
+                        ${dbViewMode === 'full' ? `
+                            <div class="flex items-center gap-2 pt-1">
+                                <button onclick="scrollDashboardTable('left')" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 active:bg-blue-700 text-slate-200 rounded-xl text-xs font-black flex items-center justify-center gap-1 border border-slate-700 shadow-sm">
+                                    <span>👈</span> 移至【球道 / 姓名】
+                                </button>
+                                <button onclick="scrollDashboardTable('right')" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1 shadow-md">
+                                    <span>👉</span> 移至【各局成績 / 總分】
+                                </button>
+                            </div>
+                        ` : `
+                            <div class="text-[11px] text-blue-200 text-center bg-blue-900/50 py-1 px-2 rounded-lg border border-blue-700/50">
+                                💡 精簡模式已將「姓名、局數、加分、總分」整合於手機螢幕，一目了然免滑動！
+                            </div>
+                        `}
+                    </div>
+
+                    <!-- 總表主表格容器 (支援手機與電腦全方位順暢滾動) -->
+                    <div id="dashboard-scroll-container" class="flex-1 overflow-x-auto overflow-y-auto p-2 sm:p-4 bg-slate-100 touch-scroll-x" style="width: 100%; max-width: 100vw; -webkit-overflow-scrolling: touch;">
+                        <div id="dashboard-table-wrapper" class="bg-white rounded-2xl shadow-md border border-slate-200 overflow-x-auto touch-scroll-x" style="width: 100%; -webkit-overflow-scrolling: touch;">
+                            <table class="w-full text-left border-collapse whitespace-nowrap ${dbViewMode === 'compact' ? 'min-w-[680px]' : 'min-w-[1300px]'} print-table">
+                                <thead id="dashboard-thead" class="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-sm text-xs font-black border-b border-slate-300">
+                                    <!-- 動態渲染表頭 -->
                                 </thead>
                                 <tbody id="dashboard-tbody" class="divide-y divide-slate-200 text-sm">
                                     <!-- 動態渲染表格內容 -->
@@ -2568,8 +2607,47 @@
         }
 
         function renderDashboardTable(updatedLane = null) {
+            const thead = document.getElementById('dashboard-thead');
             const tbody = document.getElementById('dashboard-tbody');
             if (!tbody) return;
+
+            if (thead) {
+                if (dbViewMode === 'compact') {
+                    thead.innerHTML = `
+                        <tr class="divide-x divide-slate-200 text-xs">
+                            <th class="p-2.5 w-12 text-center text-slate-800">球道</th>
+                            <th class="p-2.5 w-10 text-center text-slate-800">序號</th>
+                            <th class="p-2.5 text-left min-w-[130px] text-slate-800">選手 / 社團</th>
+                            <th class="p-2.5 text-center w-14 text-slate-800">第 1 局</th>
+                            <th class="p-2.5 text-center w-14 text-slate-800">第 2 局</th>
+                            <th class="p-2.5 text-center w-14 text-slate-800">第 3 局</th>
+                            <th class="p-2.5 text-center w-12 text-pink-700 bg-pink-50 font-black">加分</th>
+                            <th class="p-2.5 text-center w-16 text-blue-700 bg-blue-50 font-black text-sm">總計</th>
+                            <th class="p-2.5 text-center w-14 text-amber-700">特別獎</th>
+                        </tr>
+                    `;
+                } else {
+                    thead.innerHTML = `
+                        <tr class="divide-x divide-slate-200 text-xs">
+                            <th class="p-3 w-16 text-center text-slate-800 sticky left-0 bg-slate-100 z-10">球道</th>
+                            <th class="p-3 w-14 text-center text-slate-800">序號</th>
+                            <th class="p-3 text-center min-w-[130px] text-slate-800">所屬社</th>
+                            <th class="p-3 text-left min-w-[90px] text-slate-800">姓名</th>
+                            <th class="p-3 text-center w-16 text-slate-800">職稱</th>
+                            <th class="p-3 text-left min-w-[100px] text-slate-800">社名</th>
+                            <th class="p-3 text-center w-14 text-slate-800">性別</th>
+                            <th class="p-3 text-center w-16 text-slate-800">身份</th>
+                            <th class="p-3 text-center w-20 text-slate-800">第 1 局</th>
+                            <th class="p-3 text-center w-20 text-slate-800">第 2 局</th>
+                            <th class="p-3 text-center w-20 text-slate-800">第 3 局</th>
+                            <th class="p-3 text-center w-16 text-pink-700 bg-pink-50/80 font-black">加分</th>
+                            <th class="p-3 text-center w-24 text-blue-700 bg-blue-50/80 text-base font-black">總計</th>
+                            <th class="p-3 text-center w-24 text-amber-700">火雞 🦃</th>
+                            <th class="p-3 text-center w-24 text-pink-700">霸王花 🌺</th>
+                        </tr>
+                    `;
+                }
+            }
 
             let html = '';
 
@@ -2633,63 +2711,108 @@
                             : '<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-black text-xs border border-blue-300">男</span>')
                         : '<span class="text-slate-300">-</span>';
 
-                    html += `<tr id="lane-row-${i}-${player.id}" class="${rowHighlightClass} transition-colors border-b border-slate-200 divide-x divide-slate-100">`;
-
-                    if (pIndex === 0) {
+                    if (dbViewMode === 'compact') {
+                        // 📱 手機精簡 8 欄視圖 (免滑動直接看完整選手資訊與各局分數)
+                        html += `<tr id="lane-row-${i}-${player.id}" class="${rowHighlightClass} transition-colors border-b border-slate-200 divide-x divide-slate-100">`;
+                        if (pIndex === 0) {
+                            html += `
+                                <td rowspan="${filteredPlayers.length}" class="p-2 text-center font-black text-xl text-slate-800 border-r border-slate-200 align-middle bg-slate-100/90 shadow-inner">
+                                    <span class="bg-white px-2 py-1 rounded-xl border border-slate-300 shadow-sm">${i}</span>
+                                </td>
+                            `;
+                        }
                         html += `
-                            <td rowspan="${filteredPlayers.length}" class="p-3 text-center font-black text-2xl text-slate-800 border-r border-slate-200 align-middle bg-slate-100/90 shadow-inner">
-                                <span class="bg-white px-2.5 py-1 rounded-xl border border-slate-300 shadow-sm">${i}</span>
+                            <td class="p-2 text-center align-middle">
+                                <span class="text-[11px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-black border border-slate-300">P${player.id}</span>
                             </td>
-                        `;
-                    }
+                            <td class="p-2 align-middle">
+                                <div class="font-black text-slate-900 text-sm flex items-center gap-1">
+                                    ${player.name ? player.name : (player.nickname || '<span class="text-slate-300 font-normal italic text-xs">（留白）</span>')}
+                                    ${hasName ? (isFemale ? '<span class="text-pink-600 text-xs">👩</span>' : '<span class="text-blue-600 text-xs">👨</span>') : ''}
+                                    ${player.title ? `<span class="bg-amber-100 text-amber-800 px-1 py-0.2 rounded text-[10px] font-bold border border-amber-200">${player.title}</span>` : ''}
+                                </div>
+                                <div class="text-[11px] text-slate-500 font-medium truncate max-w-[150px]">
+                                    ${player.club || '未分配社團'}
+                                </div>
+                            </td>
+                            <td class="p-2 text-center text-slate-800 text-base font-bold">${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}</td>
+                            <td class="p-2 text-center text-slate-800 text-base font-bold">${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}</td>
+                            <td class="p-2 text-center text-slate-800 text-base font-bold">${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}</td>
+                            <td class="p-2 text-center font-black text-pink-700 text-sm bg-pink-50/50">
+                                ${bonus > 0 ? `+${bonus}` : '<span class="text-slate-300">-</span>'}
+                            </td>
+                            <td class="p-2 text-center font-black text-lg text-blue-700 bg-blue-50/50">
+                                ${total !== null ? total : '<span class="text-slate-300">-</span>'}
+                            </td>
+                            <td class="p-2 text-center align-middle">
+                                <div class="flex flex-col items-center gap-0.5 text-[11px]">
+                                    ${player.turkeys > 0 ? `<span class="bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-black">🦃${player.turkeys}</span>` : ''}
+                                    ${player.flowers > 0 ? `<span class="bg-pink-100 text-pink-800 px-1 py-0.2 rounded font-black">🌺${player.flowers}</span>` : ''}
+                                    ${(!player.turkeys && !player.flowers) ? '<span class="text-slate-300">-</span>' : ''}
+                                </div>
+                            </td>
+                        </tr>`;
+                    } else {
+                        // 📊 完整 15 欄視圖 (支援左右平滑滑動)
+                        html += `<tr id="lane-row-${i}-${player.id}" class="${rowHighlightClass} transition-colors border-b border-slate-200 divide-x divide-slate-100">`;
 
-                    html += `
-                        <td class="p-3 text-center align-middle">
-                            <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-black border border-slate-300">P${player.id}</span>
-                        </td>
-                        <td class="p-3 text-center text-slate-700 font-bold text-xs align-middle">
-                            ${hasName ? (player.club || '<span class="text-slate-400">-</span>') : '<span class="text-slate-300">-</span>'}
-                        </td>
-                        <td class="p-3 font-bold text-slate-900 align-middle">
-                            ${displayName}
-                        </td>
-                        <td class="p-3 text-center align-middle">
-                            ${titleBadge}
-                        </td>
-                        <td class="p-3 align-middle">
-                            ${nicknameDisplay}
-                        </td>
-                        <td class="p-3 text-center align-middle">
-                            ${genderBadge}
-                        </td>
-                        <td class="p-3 text-center align-middle">
-                            ${identityBadge}
-                        </td>
-                        <td class="p-3 text-center text-slate-800 text-lg font-bold">${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}</td>
-                        <td class="p-3 text-center text-slate-800 text-lg font-bold">${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}</td>
-                        <td class="p-3 text-center text-slate-800 text-lg font-bold">${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}</td>
-                        <td class="p-3 text-center font-black text-pink-700 text-base bg-pink-50/50">
-                            ${bonus > 0 ? `+${bonus}` : '<span class="text-slate-300">-</span>'}
-                        </td>
-                        <td class="p-3 text-center font-black text-2xl text-blue-700 bg-blue-50/50">
-                            ${total !== null ? total : '<span class="text-slate-300">-</span>'}
-                        </td>
-                        <td class="p-3 text-center align-middle">
-                            ${hasName && player.turkeys > 0 
-                                ? `<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-black px-2.5 py-1 rounded-full border border-amber-300 text-xs">🦃 x ${player.turkeys}</span>` 
-                                : '<span class="text-slate-300">-</span>'}
-                        </td>
-                        <td class="p-3 text-center align-middle">
-                            ${hasName && player.flowers > 0 
-                                ? `<span class="inline-flex items-center gap-1 bg-pink-100 text-pink-800 font-black px-2.5 py-1 rounded-full border border-pink-300 text-xs">🌺 x ${player.flowers}</span>` 
-                                : '<span class="text-slate-300">-</span>'}
-                        </td>
-                    </tr>`;
+                        if (pIndex === 0) {
+                            html += `
+                                <td rowspan="${filteredPlayers.length}" class="p-3 text-center font-black text-2xl text-slate-800 border-r border-slate-200 align-middle bg-slate-100/90 shadow-inner sticky left-0 z-10">
+                                    <span class="bg-white px-2.5 py-1 rounded-xl border border-slate-300 shadow-sm">${i}</span>
+                                </td>
+                            `;
+                        }
+
+                        html += `
+                            <td class="p-3 text-center align-middle">
+                                <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-black border border-slate-300">P${player.id}</span>
+                            </td>
+                            <td class="p-3 text-center text-slate-700 font-bold text-xs align-middle">
+                                ${hasName ? (player.club || '<span class="text-slate-400">-</span>') : '<span class="text-slate-300">-</span>'}
+                            </td>
+                            <td class="p-3 font-bold text-slate-900 align-middle">
+                                ${displayName}
+                            </td>
+                            <td class="p-3 text-center align-middle">
+                                ${titleBadge}
+                            </td>
+                            <td class="p-3 align-middle">
+                                ${nicknameDisplay}
+                            </td>
+                            <td class="p-3 text-center align-middle">
+                                ${genderBadge}
+                            </td>
+                            <td class="p-3 text-center align-middle">
+                                ${identityBadge}
+                            </td>
+                            <td class="p-3 text-center text-slate-800 text-lg font-bold">${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}</td>
+                            <td class="p-3 text-center text-slate-800 text-lg font-bold">${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}</td>
+                            <td class="p-3 text-center text-slate-800 text-lg font-bold">${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}</td>
+                            <td class="p-3 text-center font-black text-pink-700 text-base bg-pink-50/50">
+                                ${bonus > 0 ? `+${bonus}` : '<span class="text-slate-300">-</span>'}
+                            </td>
+                            <td class="p-3 text-center font-black text-2xl text-blue-700 bg-blue-50/50">
+                                ${total !== null ? total : '<span class="text-slate-300">-</span>'}
+                            </td>
+                            <td class="p-3 text-center align-middle">
+                                ${hasName && player.turkeys > 0 
+                                    ? `<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-black px-2.5 py-1 rounded-full border border-amber-300 text-xs">🦃 x ${player.turkeys}</span>` 
+                                    : '<span class="text-slate-300">-</span>'}
+                            </td>
+                            <td class="p-3 text-center align-middle">
+                                ${hasName && player.flowers > 0 
+                                    ? `<span class="inline-flex items-center gap-1 bg-pink-100 text-pink-800 font-black px-2.5 py-1 rounded-full border border-pink-300 text-xs">🌺 x ${player.flowers}</span>` 
+                                    : '<span class="text-slate-300">-</span>'}
+                            </td>
+                        </tr>`;
+                    }
                 });
             }
 
             if (html === '') {
-                html = `<tr><td colspan="15" class="p-12 text-center text-slate-400 font-black text-base">未找到符合條件的選手或球道</td></tr>`;
+                const cols = dbViewMode === 'compact' ? 9 : 15;
+                html = `<tr><td colspan="${cols}" class="p-12 text-center text-slate-400 font-black text-base">未找到符合條件的選手或球道</td></tr>`;
             }
 
             tbody.innerHTML = html;
