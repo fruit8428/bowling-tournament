@@ -351,171 +351,28 @@
                 </div>
                 <p class="text-[11px] text-slate-500 font-medium">💡 大會總表電腦與所有記分員手機只要處於<b>相同房間代碼</b>，即可自動跨網路即時互通！</p>
             </div>
-
-            <!-- 快速廣播要求同步 -->
+            <!-- 快速廣播要求同步與 QR Code -->
             <div class="pt-2 border-t border-slate-100 flex items-center gap-2">
                 <button onclick="requestFullSyncFromCloud()" class="flex-1 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1">
-                    <span>🔄</span> 立即自大會主機同步最新成績
+                    <span>🔄</span> 立即同步最新成績
                 </button>
                 <button onclick="openQrModal()" class="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center gap-1">
-                    <span>📱</span> 手機 QR Code
+                    <span>📱</span> QR Code
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- 主應用容器 (預載首頁畫面，確保護眼與0毫秒立即顯示) -->
-    <div id="app" class="min-h-screen">
-        <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/40 to-slate-100 text-slate-800 flex flex-col justify-between p-4 sm:p-8 relative overflow-hidden">
-            <!-- 背景柔和裝飾 -->
-            <div class="absolute -top-32 -left-32 w-96 h-96 bg-blue-200/40 rounded-full blur-3xl pointer-events-none"></div>
-            <div class="absolute -bottom-32 -right-32 w-96 h-96 bg-emerald-200/40 rounded-full blur-3xl pointer-events-none"></div>
-
-            <!-- 頂部資訊列 -->
-            <div class="max-w-5xl mx-auto w-full flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 z-10">
-                <div class="flex items-center gap-3.5">
-                    <span class="text-3xl sm:text-4xl p-3 bg-white rounded-2xl border border-slate-200 shadow-sm">🎳</span>
-                    <div>
-                        <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 flex items-center gap-2">
-                            保齡球聯誼賽
-                            <span class="text-xs font-black uppercase px-2.5 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full">Live v2.0</span>
-                        </h1>
-                        <p class="text-xs sm:text-sm text-slate-500 font-medium">40 球道即時記分 • 手機掃碼免密連線 • 大螢幕總表看板</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2.5">
-                    <button onclick="openQrModal()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-xs font-black transition-all flex items-center gap-1.5 active:scale-95 shadow-md shadow-emerald-600/20">
-                        <span>📱</span> 手機掃碼連線
-                    </button>
-                    <div id="conn-status-badge" class="shrink-0"></div>
-                </div>
-            </div>
-
-            <!-- 手機連線提示 Banner -->
-            <div class="max-w-5xl mx-auto w-full my-4 z-10">
-                <div class="bg-white/90 backdrop-blur-sm border border-emerald-200 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex items-center gap-3.5 text-left">
-                        <span class="text-2xl p-2.5 bg-emerald-100 text-emerald-800 rounded-2xl shadow-inner">📲</span>
-                        <div>
-                            <div class="text-sm font-black text-emerald-900">手機記分員快速連線：</div>
-                            <div class="text-xs text-slate-600 mt-0.5">點擊右側按鈕掃描 QR Code，手機即可直接進入記分員端並即時同步大會看板！</div>
-                        </div>
-                    </div>
-                    <button onclick="openQrModal()" class="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-black rounded-2xl text-xs shrink-0 transition-all shadow-sm active:scale-95 flex items-center gap-1.5">
-                        <span>📸</span> 開啟連線 QR Code
-                    </button>
-                </div>
-            </div>
-
-            <!-- 主功能卡片區塊 -->
-            <div class="max-w-5xl mx-auto w-full my-3 grid grid-cols-1 md:grid-cols-2 gap-6 z-10">
-                
-                <!-- 1. 記分員入口 -->
-                <div onclick="requestScorekeeperAccess()" class="group cursor-pointer bg-white hover:bg-blue-50/50 p-6 sm:p-8 rounded-3xl border border-slate-200 hover:border-blue-400 shadow-md hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-                    <div class="flex items-start justify-between mb-5">
-                        <div class="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner">
-                            📱
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                            <span class="text-xs font-black uppercase px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
-                                <span>🔒</span> 密碼: 2222
-                            </span>
-                        </div>
-                    </div>
-                    <div>
-                        <h2 class="text-2xl font-black text-slate-900 group-hover:text-blue-600 transition-colors mb-2">記分員登錄端</h2>
-                        <p class="text-slate-600 text-sm leading-relaxed mb-6">手機現場專用：輸入密碼 2222 進入，快速手動輸入各局成績、拍照智慧辨識完賽照片或修改選手資訊。</p>
-                    </div>
-                    <div class="flex items-center justify-between text-blue-600 font-black text-sm pt-4 border-t border-slate-100">
-                        <span>輸入密碼 (2222) 登錄</span>
-                        <span class="group-hover:translate-x-1.5 transition-transform">➔</span>
-                    </div>
-                </div>
-
-                <!-- 2. 大會總表看板 -->
-                <div onclick="navigateTo('dashboard')" class="group cursor-pointer bg-white hover:bg-emerald-50/50 p-6 sm:p-8 rounded-3xl border border-slate-200 hover:border-emerald-400 shadow-md hover:shadow-xl hover:shadow-emerald-500/10 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-                    <div class="flex items-start justify-between mb-5">
-                        <div class="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-inner">
-                            💻
-                        </div>
-                        <span class="text-xs font-black uppercase px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">電視 / 投影機大螢幕</span>
-                    </div>
-                    <div>
-                        <h2 class="text-2xl font-black text-slate-900 group-hover:text-emerald-600 transition-colors mb-2">大會即時總表看板</h2>
-                        <p class="text-slate-600 text-sm leading-relaxed mb-6">即時同步全場 40 球道 160 位選手成績，自動計算女子加分 (+36)，支援大螢幕自動巡迴滾動展示。</p>
-                    </div>
-                    <div class="flex items-center justify-between text-emerald-600 font-black text-sm pt-4 border-t border-slate-100">
-                        <span>開啟大會看板</span>
-                        <span class="group-hover:translate-x-1.5 transition-transform">➔</span>
-                    </div>
-                </div>
-
-                <!-- 3. 即時排行榜與獎項 -->
-                <div onclick="navigateTo('leaderboard')" class="group cursor-pointer bg-white hover:bg-amber-50/50 p-6 sm:p-8 rounded-3xl border border-slate-200 hover:border-amber-400 shadow-md hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-                    <div class="flex items-start justify-between mb-5">
-                        <div class="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 border border-amber-200 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-inner">
-                            🏆
-                        </div>
-                        <span class="text-xs font-black uppercase px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300">即時獎項運算</span>
-                    </div>
-                    <div>
-                        <h2 class="text-2xl font-black text-slate-900 group-hover:text-amber-600 transition-colors mb-2">即時排名與獎項榜</h2>
-                        <p class="text-slate-600 text-sm leading-relaxed mb-6">男女個人總分榜、單局最高分、火雞王 🦃、霸王花后 🌺 及社團團體積分總排。</p>
-                    </div>
-                    <div class="flex items-center justify-between text-amber-600 font-black text-sm pt-4 border-t border-slate-100">
-                        <span>查看即時排行榜</span>
-                        <span class="group-hover:translate-x-1.5 transition-transform">➔</span>
-                    </div>
-                </div>
-
-                <!-- 4. 賽事後台與 Excel 匯出入 -->
-                <div onclick="navigateTo('admin')" class="group cursor-pointer bg-white hover:bg-purple-50/50 p-6 sm:p-8 rounded-3xl border border-slate-200 hover:border-purple-400 shadow-md hover:shadow-xl hover:shadow-purple-500/10 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-                    <div class="flex items-start justify-between mb-5">
-                        <div class="w-14 h-14 rounded-2xl bg-purple-100 text-purple-700 border border-purple-200 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:bg-purple-600 group-hover:text-white transition-all shadow-inner">
-                            ⚙️
-                        </div>
-                        <span class="text-xs font-black uppercase px-3 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-300">賽事總務與資料</span>
-                    </div>
-                    <div>
-                        <h2 class="text-2xl font-black text-slate-900 group-hover:text-purple-600 transition-colors mb-2">賽事管理與 Excel 匯出入</h2>
-                        <p class="text-slate-600 text-sm leading-relaxed mb-6">匯出正式 Excel 總成績單、批次匯入名冊、全場廣播、修改記分員密碼 (2222) 與重置資料。</p>
-                    </div>
-                    <div class="flex items-center justify-between text-purple-600 font-black text-sm pt-4 border-t border-slate-100">
-                        <span>進入管理後台</span>
-                        <span class="group-hover:translate-x-1.5 transition-transform">➔</span>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- 底部選單 -->
-            <div class="max-w-5xl mx-auto w-full pt-4 pb-2 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 border-t border-slate-200 z-10 font-medium">
-                <div>
-                    <span>🎳 保齡球賽事全功能系統 • 手機即時連線 • 密碼安全鎖定</span>
-                </div>
-                <div class="flex items-center gap-4">
-                    <button onclick="openQrModal()" class="text-blue-600 hover:text-blue-800 transition-colors underline font-bold">
-                        手機連線 QR Code
-                    </button>
-                    <span>|</span>
-                    <button onclick="clearTestData(true)" class="hover:text-rose-600 transition-colors underline">
-                        重新生成示範名單
-                    </button>
-                    <span>|</span>
-                    <button onclick="exportExcelDirect()" class="hover:text-emerald-700 transition-colors underline font-bold">
-                        快速下載 Excel 總表
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- 主應用容器 -->
+    <div id="app" class="min-h-screen"></div>
 
     <script>
         // ==========================================
         // 系統常數與狀態管理
         // ==========================================
-        const STORAGE_KEY = 'bowling_event_data_v4_yang';
-        const AUTH_STORAGE_KEY = 'bowling_scorekeeper_auth_v1';
+        const STORAGE_KEY = 'bowling_lanes_data_v2';
+        const SETTINGS_STORAGE_KEY = 'bowling_event_settings_v2';
+        const AUTH_STORAGE_KEY = 'bowling_scorekeeper_auth_v2';
         
         let TOTAL_LANES = 40;
         let PLAYERS_PER_LANE = 4;
@@ -524,7 +381,7 @@
         let SCOREKEEPER_PASSWORD = '2222'; // 預設密碼
         let GEMINI_API_KEY = '';
 
-        let currentView = 'home'; // 'home', 'scorekeeper', 'dashboard', 'leaderboard', 'admin'
+        let currentView = 'dashboard'; // 預設直接進入大會即時總表看板 ('dashboard', 'home', 'scorekeeper', 'leaderboard', 'admin')
         let lanesData = {};
         let eventSettings = {};
         let isConnectedToServer = false;
@@ -686,7 +543,7 @@
                     if (isScorekeeperAuthenticated) {
                         currentView = 'scorekeeper';
                     } else {
-                        currentView = 'home';
+                        currentView = 'dashboard';
                         setTimeout(() => openAuthModal(), 300);
                     }
                 } else if (['dashboard', 'leaderboard', 'admin', 'home'].includes(queryView)) {
