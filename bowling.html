@@ -1286,20 +1286,20 @@
                 html += `
                     <div class="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-200 transition-all hover:border-blue-400 group">
                         
-                        <!-- 選手標題與資料 -->
-                        <div class="flex flex-col gap-2.5 mb-4">
-                            <div class="flex items-center gap-2.5">
-                                <span class="bg-slate-800 text-white text-xs font-black px-2.5 py-1.5 rounded-lg shadow-sm shrink-0">P${player.id}</span>
+                        <!-- 選手標題與基本資料（姓名、性別、職稱、社名、身份、所屬社，皆可自由更改） -->
+                        <div class="space-y-2 mb-3.5">
+                            <!-- Row 1: 序號 + 姓名 + 性別切換 -->
+                            <div class="flex items-center gap-2">
+                                <span class="bg-slate-800 text-white text-xs font-black px-2.5 py-1.5 rounded-xl shadow-sm shrink-0">P${player.id}</span>
                                 
                                 <!-- 姓名輸入 -->
-                                <div class="flex-1 flex items-center gap-2">
+                                <div class="flex-1 min-w-0 flex items-center bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 focus-within:border-blue-500 focus-within:bg-white transition-all">
+                                    <span class="text-xs font-black text-slate-500 mr-1.5 shrink-0">姓名:</span>
                                     <input type="text" value="${player.name || ''}" 
                                         ${isSkLocked ? 'disabled' : ''}
                                         onchange="updatePlayerFieldLive(${skSelectedLane}, ${player.id}, 'name', this.value)" 
                                         placeholder="輸入姓名" 
-                                        class="flex-1 border-b-2 border-slate-200 focus:border-blue-600 outline-none px-1 py-1 font-black text-slate-900 bg-transparent transition-colors text-base">
-                                    ${player.title ? `<span class="bg-amber-100 text-amber-800 text-xs font-black px-2 py-0.5 rounded border border-amber-300 shrink-0">${player.title}</span>` : ''}
-                                    ${player.nickname ? `<span class="text-xs font-bold text-slate-600 shrink-0">${player.nickname}</span>` : ''}
+                                        class="w-full bg-transparent outline-none font-black text-slate-900 text-sm sm:text-base">
                                 </div>
 
                                 <!-- 一鍵切換性別 -->
@@ -1313,15 +1313,49 @@
                                 </div>
                             </div>
                             
-                            <!-- 社團與身份 -->
-                            <div class="flex items-center gap-2 pl-9">
-                                <span class="text-xs font-bold text-slate-400 shrink-0">社團：</span>
+                            <!-- Row 2: 職稱 + 社名(英文名) + 身份 (全部可自由即時修改) -->
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <!-- 職稱 (Title) -->
+                                <div class="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-200 focus-within:border-amber-400 focus-within:bg-amber-50/40 transition-all">
+                                    <span class="text-xs font-black text-amber-800 mr-1 shrink-0">職稱:</span>
+                                    <input type="text" value="${player.title || ''}" 
+                                        ${isSkLocked ? 'disabled' : ''}
+                                        onchange="updatePlayerFieldLive(${skSelectedLane}, ${player.id}, 'title', this.value)" 
+                                        placeholder="如 PP/PE/CP" 
+                                        class="w-full bg-transparent outline-none text-xs font-black text-slate-800 placeholder:text-slate-400 placeholder:font-normal">
+                                </div>
+
+                                <!-- 社名 / 英文名 (Nickname) -->
+                                <div class="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-200 focus-within:border-blue-400 focus-within:bg-blue-50/40 transition-all">
+                                    <span class="text-xs font-black text-blue-800 mr-1 shrink-0">社名:</span>
+                                    <input type="text" value="${player.nickname || ''}" 
+                                        ${isSkLocked ? 'disabled' : ''}
+                                        onchange="updatePlayerFieldLive(${skSelectedLane}, ${player.id}, 'nickname', this.value)" 
+                                        placeholder="社名 / 英文名" 
+                                        class="w-full bg-transparent outline-none text-xs font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-normal">
+                                </div>
+
+                                <!-- 身份 (Identity: 社友 / 寶尊眷 / 子女) -->
+                                <div class="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-200 focus-within:border-purple-400 focus-within:bg-purple-50/40 transition-all">
+                                    <span class="text-xs font-black text-purple-800 mr-1 shrink-0">身份:</span>
+                                    <select ${isSkLocked ? 'disabled' : ''}
+                                            onchange="updatePlayerIdentity(${skSelectedLane}, ${player.id}, this.value)"
+                                            class="w-full bg-transparent outline-none text-xs font-black text-slate-800 cursor-pointer">
+                                        <option value="社友" ${(player.identity || '社友') === '社友' ? 'selected' : ''}>社友 👔</option>
+                                        <option value="寶尊眷" ${player.identity === '寶尊眷' ? 'selected' : ''}>寶尊眷 💐</option>
+                                        <option value="子女" ${player.identity === '子女' ? 'selected' : ''}>子女 🧒</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Row 3: 所屬社團 -->
+                            <div class="flex items-center bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:bg-emerald-50/30 transition-all">
+                                <span class="text-xs font-black text-emerald-800 mr-1.5 shrink-0">所屬社:</span>
                                 <input type="text" value="${player.club || ''}" 
                                     ${isSkLocked ? 'disabled' : ''}
                                     onchange="updatePlayerFieldLive(${skSelectedLane}, ${player.id}, 'club', this.value)" 
-                                    placeholder="輸入所屬社團" 
-                                    class="flex-1 border-b border-slate-200 focus:border-emerald-600 outline-none px-1 py-0.5 font-bold text-slate-700 bg-transparent transition-colors text-xs">
-                                <span class="text-xs px-2 py-0.5 rounded font-bold ${player.identity === '寶尊眷' ? 'bg-purple-100 text-purple-700' : (player.identity === '子女' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600')}">${player.identity || '社友'}</span>
+                                    placeholder="如 12-1龍門社 / 04-3民生社" 
+                                    class="w-full bg-transparent outline-none text-xs font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-normal">
                             </div>
                         </div>
 
@@ -1399,6 +1433,15 @@
             if (player) {
                 player.gender = player.gender === '男' ? '女' : '男';
                 updatePlayerFieldLive(lane, pId, 'gender', player.gender);
+                renderScorekeeperPlayers();
+            }
+        }
+
+        function updatePlayerIdentity(lane, pId, identityVal) {
+            const player = lanesData[lane]?.find(p => p.id === pId);
+            if (player) {
+                player.identity = identityVal;
+                updatePlayerFieldLive(lane, pId, 'identity', identityVal);
                 renderScorekeeperPlayers();
             }
         }
