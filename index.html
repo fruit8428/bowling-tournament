@@ -103,7 +103,7 @@
                     🔐
                 </div>
                 <h3 class="text-xl font-black text-slate-800 tracking-wide">記分員身份驗證</h3>
-                <p class="text-xs text-slate-500 font-medium">請輸入現場授權密碼 (預設: <span class="text-blue-600 font-black">2222</span>)</p>
+                <p class="text-xs text-slate-500 font-medium">請輸入 4 位數記分員專屬授權密碼</p>
             </div>
 
             <!-- 密碼輸入框 -->
@@ -150,17 +150,14 @@
                 </button>
             </div>
 
-            <!-- 確認登錄按鈕 & 快捷填入 -->
+            <!-- 確認登錄按鈕 -->
             <div class="space-y-2 pt-2 relative z-10">
-                <button type="button" onclick="verifyScorekeeperPin()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-base rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5">
+                <button type="button" onclick="verifyScorekeeperPin()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-base rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
                     <span>🔓</span> 驗證並進入記分端
                 </button>
 
-                <div class="flex items-center justify-between text-xs pt-2 text-slate-500 px-1">
-                    <button type="button" onclick="quickFillPassword()" class="text-blue-600 hover:text-blue-800 font-black underline">
-                        一鍵帶入 2222
-                    </button>
-                    <button type="button" onclick="closeAuthModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                <div class="flex items-center justify-center text-xs pt-2 text-slate-500 px-1">
+                    <button type="button" onclick="closeAuthModal()" class="text-slate-400 hover:text-slate-600 font-bold transition-colors cursor-pointer">
                         取消返回
                     </button>
                 </div>
@@ -232,7 +229,7 @@
                     </div>
 
                     <div class="text-[11px] text-slate-500 font-bold">
-                        掃描後將自動帶入記分密碼 <span class="text-blue-700 font-black font-mono">2222</span> 免手動輸入
+                        💡 手機掃描後將自動完成授權，直接進入記分員頁面
                     </div>
 
                 </div>
@@ -898,7 +895,7 @@
 
             if (!currentEnteredPin) {
                 const errMsg = document.getElementById('auth-error-msg');
-                if (errMsg) errMsg.innerText = '⚠️ 請先輸入密碼 (預設: 2222)';
+                if (errMsg) errMsg.innerText = '⚠️ 請輸入 4 位數密碼';
                 return;
             }
 
@@ -928,7 +925,7 @@
             } else {
                 const box = document.getElementById('auth-box');
                 const errMsg = document.getElementById('auth-error-msg');
-                if (errMsg) errMsg.innerText = '❌ 密碼錯誤，請重新輸入 (預設: 2222)';
+                if (errMsg) errMsg.innerText = '❌ 密碼錯誤，請重新輸入';
                 if (box) {
                     box.classList.add('animate-shake');
                     setTimeout(() => box.classList.remove('animate-shake'), 400);
@@ -1252,16 +1249,16 @@
                                 </div>
                                 <div class="flex items-center gap-1.5">
                                     <span class="text-xs font-black uppercase px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
-                                        <span>🔒</span> 密碼: 2222
+                                        <span>🔒</span> 密碼保護
                                     </span>
                                 </div>
                             </div>
                             <div>
                                 <h2 class="text-2xl font-black text-slate-900 group-hover:text-blue-600 transition-colors mb-2">記分員登錄端</h2>
-                                <p class="text-slate-600 text-sm leading-relaxed mb-6">手機現場專用：輸入密碼 2222 進入，快速輸入各局成績、切換選手性別與記錄火雞 🦃 / 霸王花 🌺 獎項。</p>
+                                <p class="text-slate-600 text-sm leading-relaxed mb-6">手機現場專用：輸入專屬授權密碼進入，快速輸入各局成績、切換選手性別與記錄火雞 🦃 / 霸王花 🌺 獎項。</p>
                             </div>
                             <div class="flex items-center justify-between text-blue-600 font-black text-sm pt-4 border-t border-slate-100">
-                                <span>${isScorekeeperAuthenticated ? '已解鎖 • 點擊進入記分' : '輸入密碼 (2222) 登錄'}</span>
+                                <span>${isScorekeeperAuthenticated ? '已解鎖 • 點擊進入記分' : '輸入密碼登錄'}</span>
                                 <span class="group-hover:translate-x-1.5 transition-transform">➔</span>
                             </div>
                         </div>
@@ -1312,7 +1309,7 @@
                             </div>
                             <div>
                                 <h2 class="text-2xl font-black text-slate-900 group-hover:text-purple-600 transition-colors mb-2">賽事管理與 Excel 匯出入</h2>
-                                <p class="text-slate-600 text-sm leading-relaxed mb-6">匯出正式 Excel 總成績單、批次匯入名冊、全場廣播、修改記分員密碼 (2222) 與重置資料。</p>
+                                <p class="text-slate-600 text-sm leading-relaxed mb-6">匯出正式 Excel 總成績單、批次匯入名冊、全場廣播、修改記分員密碼與重置資料。</p>
                             </div>
                             <div class="flex items-center justify-between text-purple-600 font-black text-sm pt-4 border-t border-slate-100">
                                 <span>進入管理後台</span>
