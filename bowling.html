@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>保齡球賽事即時記分與大會總表系統</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -32,6 +32,12 @@
         }
         ::-webkit-scrollbar-thumb:hover {
             background: #94a3b8; 
+        }
+        /* Touch scroll styles for smooth horizontal scrolling on mobile */
+        .touch-scroll-x {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            touch-action: pan-x pan-y !important;
         }
         /* Row pulse animation when updated in real-time */
         @keyframes rowHighlightLight {
@@ -669,12 +675,16 @@
             loadLocalOrSeedData();
             fetchServerData();
 
-            if (queryView === 'scorekeeper') {
-                if (isScorekeeperAuthenticated) {
-                    currentView = 'scorekeeper';
-                } else {
-                    currentView = 'home';
-                    setTimeout(() => openAuthModal(), 300);
+            if (queryView) {
+                if (queryView === 'scorekeeper') {
+                    if (isScorekeeperAuthenticated) {
+                        currentView = 'scorekeeper';
+                    } else {
+                        currentView = 'home';
+                        setTimeout(() => openAuthModal(), 300);
+                    }
+                } else if (['dashboard', 'leaderboard', 'admin', 'home'].includes(queryView)) {
+                    currentView = queryView;
                 }
             }
 
@@ -2490,10 +2500,19 @@
                         </div>
                     </div>
 
-                    <!-- 總表主表格容器 (純白清新表格) -->
-                    <div id="dashboard-scroll-container" class="flex-1 overflow-auto p-2 sm:p-4 bg-slate-100">
-                        <div class="max-w-[1850px] mx-auto bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
-                            <table class="w-full text-left border-collapse whitespace-nowrap min-w-[1250px] print-table">
+                    <!-- 總表主表格容器 (支援手機平滑左右滑動與上下滾動) -->
+                    <div id="dashboard-scroll-container" class="flex-1 overflow-x-auto overflow-y-auto p-2 sm:p-4 bg-slate-100 touch-scroll-x">
+                        
+                        <!-- 手機端左右滑動提示條 (手機專用提示) -->
+                        <div class="lg:hidden mb-2.5 bg-blue-50 border border-blue-200 text-blue-900 px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-between shadow-sm">
+                            <span class="flex items-center gap-1.5">
+                                <span class="text-base animate-pulse">👈👉</span> 手機請直接向右滑動，查看 15 欄完整成績與總分
+                            </span>
+                            <span class="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">15 欄位</span>
+                        </div>
+
+                        <div class="max-w-[1850px] mx-auto bg-white rounded-2xl shadow-md border border-slate-200 overflow-x-auto touch-scroll-x">
+                            <table class="w-full text-left border-collapse whitespace-nowrap min-w-[1300px] print-table">
                                 <thead class="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-sm text-xs font-black border-b border-slate-300">
                                     <tr class="divide-x divide-slate-200">
                                         <th class="p-3 w-16 text-center text-slate-800">球道</th>
@@ -2828,8 +2847,8 @@
 
                 html = `
                     <div class="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-slate-200 overflow-hidden">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse whitespace-nowrap">
+                        <div class="overflow-x-auto touch-scroll-x">
+                            <table class="w-full text-left border-collapse whitespace-nowrap min-w-[900px]">
                                 <thead class="bg-slate-100 text-slate-700 text-xs sm:text-sm font-black border-b border-slate-300">
                                     <tr>
                                         <th class="p-3.5 text-center w-20">名次</th>
@@ -3012,8 +3031,8 @@
 
                         <!-- 完整分區排行榜總表 -->
                         <div class="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-slate-200 overflow-hidden">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse whitespace-nowrap">
+                            <div class="overflow-x-auto touch-scroll-x">
+                                <table class="w-full text-left border-collapse whitespace-nowrap min-w-[1100px]">
                                     <thead class="bg-slate-100 text-slate-700 text-xs sm:text-sm font-black border-b border-slate-300">
                                         <tr>
                                             <th class="p-3.5 text-center w-20">分區名次</th>
@@ -3110,8 +3129,8 @@
 
                 html = `
                     <div class="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-slate-200 overflow-hidden">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse whitespace-nowrap">
+                        <div class="overflow-x-auto touch-scroll-x">
+                            <table class="w-full text-left border-collapse whitespace-nowrap min-w-[1000px]">
                                 <thead class="bg-slate-100 text-slate-700 text-xs sm:text-sm font-black border-b border-slate-300">
                                     <tr>
                                         <th class="p-3.5 text-center w-20">團體名次</th>
