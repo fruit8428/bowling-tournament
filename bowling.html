@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Socket.IO Client CDN -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <!-- MQTT.js CDN for zero-config global cloud real-time synchronization -->
+    <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
     <!-- SheetJS CDN (for client-side Excel / CSV parsing & fallback) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
@@ -299,6 +301,56 @@
             </div>
 
         </div>
+    <!-- ☁️ 雲端跨網即時同步設定 Modal -->
+    <div id="sync-modal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 my-auto">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <span class="text-2xl">☁️</span>
+                    <div>
+                        <h3 class="text-lg font-black text-slate-800">全場即時連線同步中心</h3>
+                        <p class="text-xs text-slate-500 font-medium">支援跨 Wi-Fi、手機 4G/5G、GitHub Pages 全域即時同步</p>
+                    </div>
+                </div>
+                <button onclick="closeSyncModal()" class="text-slate-400 hover:text-slate-600 font-black text-xl px-1.5">✕</button>
+            </div>
+
+            <!-- 連線狀態燈號卡片 -->
+            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                <div class="flex items-center justify-between text-xs font-bold">
+                    <span class="text-slate-600">☁️ 雲端跨網即時同步:</span>
+                    <span id="sync-cloud-status" class="font-black text-emerald-600">連線中...</span>
+                </div>
+                <div class="flex items-center justify-between text-xs font-bold">
+                    <span class="text-slate-600">📡 本地區網主機 (WebSocket):</span>
+                    <span id="sync-lan-status" class="font-black text-slate-500">偵測中...</span>
+                </div>
+            </div>
+
+            <!-- 賽事同步房間設定 -->
+            <div class="space-y-2">
+                <label class="text-xs font-black text-slate-700">賽事專屬同步房間代碼 (Room ID)：</label>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="sync-room-input" value="bowling2026" 
+                           placeholder="例如: bowling2026"
+                           class="flex-1 p-2.5 bg-slate-50 border-2 border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl text-sm font-black text-slate-800 outline-none transition-all">
+                    <button onclick="applyNewCloudRoom()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-black rounded-xl shadow-md transition-all">
+                        切換/連線
+                    </button>
+                </div>
+                <p class="text-[11px] text-slate-500 font-medium">💡 大會總表電腦與所有記分員手機只要處於<b>相同房間代碼</b>，即可自動跨網路即時互通！</p>
+            </div>
+
+            <!-- 快速廣播要求同步 -->
+            <div class="pt-2 border-t border-slate-100 flex items-center gap-2">
+                <button onclick="requestFullSyncFromCloud()" class="flex-1 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1">
+                    <span>🔄</span> 立即自大會主機同步最新成績
+                </button>
+                <button onclick="openQrModal()" class="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center gap-1">
+                    <span>📱</span> 手機 QR Code
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- 主應用容器 -->
@@ -326,6 +378,12 @@
         let detectedLocalIp = '192.168.0.143';
         let serverMobileUrl = 'http://localhost:3000';
 
+        // 雲端跨網即時同步雙核心 (支援 GitHub Pages、手機 4G/5G、跨 Wi-Fi 全域同步)
+        let cloudMqtt = null;
+        let cloudRoomId = localStorage.getItem('bowling_cloud_room_id') || 'bowling2026';
+        let myClientId = 'client_' + Math.random().toString(36).substring(2, 9);
+        let isCloudConnected = false;
+
         // 記分員身份認證狀態
         let isScorekeeperAuthenticated = false;
         let currentEnteredPin = '';
@@ -345,7 +403,7 @@
         let lbActiveTab = 'overall'; // 'overall', 'men', 'women', 'clubs', 'awards'
 
         // ==========================================
-        // 初始化與 Socket.IO 即時通訊
+        // 初始化與雙核心即時通訊 (本地 WebSocket + 雲端 MQTT)
         // ==========================================
         function initApp() {
             const urlParams = new URLSearchParams(window.location.search);
@@ -354,6 +412,12 @@
             const queryAuth = urlParams.get('auth');
             const queryLane = urlParams.get('lane');
             const queryGame = urlParams.get('game');
+            const queryRoom = urlParams.get('room');
+
+            if (queryRoom && queryRoom.trim() !== '') {
+                cloudRoomId = queryRoom.trim();
+                localStorage.setItem('bowling_cloud_room_id', cloudRoomId);
+            }
 
             const validPassword = SCOREKEEPER_PASSWORD || '2222';
             if (queryPwd === validPassword || queryPwd === '2222' || queryAuth === 'true') {
@@ -381,19 +445,21 @@
             }
             serverMobileUrl = `http://${detectedLocalIp}:${window.location.port || 3000}`;
 
+            // 1. 初始化本地 Socket.IO (若有伺服器主機)
             if (typeof io !== 'undefined') {
                 try {
-                    const serverUrl = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
-                    socket = io(serverUrl, { reconnectionAttempts: 5, timeout: 3000 });
+                    const serverUrl = window.location.origin.startsWith('http') && !window.location.origin.includes('github.io')
+                        ? window.location.origin 
+                        : `http://${detectedLocalIp}:3000`;
+                    socket = io(serverUrl, { reconnectionAttempts: 3, timeout: 2500 });
 
                     socket.on('connect', () => {
-                        console.log('✅ 已連接至保齡球賽事即時伺服器');
+                        console.log('✅ 已連接至本地保齡球伺服器 (Socket.IO)');
                         isConnectedToServer = true;
                         updateConnectionBadge();
                     });
 
                     socket.on('disconnect', () => {
-                        console.warn('⚠️ 與伺服器連線中斷，切換為本地離線模式');
                         isConnectedToServer = false;
                         updateConnectionBadge();
                     });
@@ -445,9 +511,12 @@
                     });
 
                 } catch (e) {
-                    console.log('Socket.IO 初始化跳過，使用本地模式');
+                    console.log('Socket.IO 初始化跳過');
                 }
             }
+
+            // 2. 初始化雲端跨網即時同步 (MQTT over SSL WebSocket - 支援 GitHub Pages / 4G / 跨 Wi-Fi)
+            initCloudSync();
 
             loadLocalOrSeedData();
             fetchServerData();
@@ -469,6 +538,169 @@
             });
 
             renderCurrentView();
+        }
+
+        /**
+         * 雲端即時同步核心 (免本機伺服器、全域即時互通)
+         */
+        function initCloudSync() {
+            if (typeof mqtt === 'undefined') {
+                setTimeout(initCloudSync, 500);
+                return;
+            }
+            try {
+                // 連線至公用高速 SSL MQTT Broker (EMQX Public Broker)
+                const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
+                cloudMqtt = mqtt.connect(brokerUrl, {
+                    clientId: myClientId,
+                    clean: true,
+                    connectTimeout: 5000,
+                    reconnectPeriod: 3000
+                });
+
+                cloudMqtt.on('connect', () => {
+                    console.log(`☁️ 雲端即時同步已連線！房間: [${cloudRoomId}]`);
+                    isCloudConnected = true;
+                    updateConnectionBadge();
+
+                    const topic = `bowling_tournament_v1/${cloudRoomId}/events`;
+                    cloudMqtt.subscribe(topic, (err) => {
+                        if (!err) {
+                            // 剛加入時，向房間廣播要求最新完整賽事資料
+                            broadcastCloudEvent('request_sync', { clientId: myClientId });
+                        }
+                    });
+                });
+
+                cloudMqtt.on('message', (topic, message) => {
+                    try {
+                        const payload = JSON.parse(message.toString());
+                        if (!payload || payload.senderId === myClientId) return; // 忽略自己發送的事件
+
+                        handleIncomingSyncMessage(payload);
+                    } catch (err) {
+                        console.warn('雲端訊息解析異常:', err);
+                    }
+                });
+
+                cloudMqtt.on('offline', () => {
+                    isCloudConnected = false;
+                    updateConnectionBadge();
+                });
+
+                cloudMqtt.on('error', (err) => {
+                    console.warn('雲端同步通道提醒:', err.message);
+                });
+            } catch (e) {
+                console.warn('雲端同步初始化異常:', e);
+            }
+        }
+
+        function broadcastCloudEvent(type, data = {}) {
+            if (!cloudMqtt || !cloudMqtt.connected) return;
+            try {
+                const message = {
+                    type: type,
+                    senderId: myClientId,
+                    timestamp: Date.now(),
+                    ...data
+                };
+                const topic = `bowling_tournament_v1/${cloudRoomId}/events`;
+                cloudMqtt.publish(topic, JSON.stringify(message));
+            } catch (e) {
+                console.warn('廣播事件失敗:', e);
+            }
+        }
+
+        function handleIncomingSyncMessage(payload) {
+            const { type, lane, players, data, settings } = payload;
+
+            if (type === 'lane_updated' && lane && players) {
+                lanesData[lane] = players;
+                saveToLocalStorage();
+
+                // 畫面即時刷新
+                if (currentView === 'dashboard') {
+                    renderDashboardTable(lane);
+                } else if (currentView === 'scorekeeper' && skSelectedLane == lane) {
+                    renderScorekeeperPlayers();
+                } else if (currentView === 'leaderboard') {
+                    renderLeaderboard();
+                }
+                showToast(`📡 第 ${lane} 道成績已即時同步更新！`, 'info');
+            } else if (type === 'bulk_updated' && data) {
+                lanesData = data;
+                saveToLocalStorage();
+                renderCurrentView();
+                showToast('📡 全場名單與成績已自雲端完成同步！', 'success');
+            } else if (type === 'request_sync') {
+                // 如果自己有資料，回傳給剛加入的記分員手機
+                if (lanesData && Object.keys(lanesData).length > 0) {
+                    broadcastCloudEvent('sync_response', {
+                        targetClientId: payload.clientId,
+                        data: lanesData,
+                        settings: eventSettings
+                    });
+                }
+            } else if (type === 'sync_response') {
+                if (payload.targetClientId === myClientId && payload.data) {
+                    lanesData = payload.data;
+                    if (payload.settings) applySettings(payload.settings);
+                    saveToLocalStorage();
+                    renderCurrentView();
+                    showToast('✅ 已成功自大會同步最新賽事名單與成績！', 'success');
+                }
+            } else if (type === 'settings_updated' && settings) {
+                applySettings(settings);
+                renderCurrentView();
+            } else if (type === 'announcement' && payload.message) {
+                showBroadcast(payload.message, payload.duration || 8000);
+            }
+        }
+
+        function openSyncSettingsModal() {
+            const modal = document.getElementById('sync-modal');
+            const roomInput = document.getElementById('sync-room-input');
+            const cloudStatus = document.getElementById('sync-cloud-status');
+            const lanStatus = document.getElementById('sync-lan-status');
+
+            if (roomInput) roomInput.value = cloudRoomId;
+            if (cloudStatus) {
+                cloudStatus.innerHTML = isCloudConnected 
+                    ? `<span class="text-emerald-600 font-black">🟢 已連線 (房間: ${cloudRoomId})</span>`
+                    : `<span class="text-amber-600 font-black">🟡 連線中...</span>`;
+            }
+            if (lanStatus) {
+                lanStatus.innerHTML = isConnectedToServer 
+                    ? `<span class="text-emerald-600 font-black">🟢 本地伺服器已連線</span>`
+                    : `<span class="text-slate-400 font-bold">⚪ 未連線 (使用雲端同步)</span>`;
+            }
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeSyncModal() {
+            const modal = document.getElementById('sync-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function applyNewCloudRoom() {
+            const input = document.getElementById('sync-room-input');
+            const val = input ? input.value.trim() : '';
+            if (val && val !== cloudRoomId) {
+                cloudRoomId = val;
+                localStorage.setItem('bowling_cloud_room_id', cloudRoomId);
+                showToast(`已切換至同步房間：[${cloudRoomId}]，正在重新連線...`, 'info');
+                if (cloudMqtt) {
+                    try { cloudMqtt.end(true); } catch(e){}
+                }
+                initCloudSync();
+            }
+            closeSyncModal();
+        }
+
+        function requestFullSyncFromCloud() {
+            broadcastCloudEvent('request_sync', { clientId: myClientId });
+            showToast('已向大會發送同步請求...', 'info');
         }
 
         function applySettings(settings) {
@@ -699,18 +931,17 @@
             const laneSelect = document.getElementById('qr-lane-select');
             const targetLane = laneSelect ? laneSelect.value : 'all';
             
-            let hostIp = detectedLocalIp;
+            let origin = window.location.origin.includes('github.io')
+                ? (window.location.origin + window.location.pathname.replace(/\/$/, ''))
+                : `http://${detectedLocalIp}:${window.location.port || 3000}`;
+
             const ipSelect = document.getElementById('qr-ip-select');
-            if (ipSelect && ipSelect.value !== 'custom' && ipSelect.value) {
-                hostIp = ipSelect.value;
+            if (ipSelect && ipSelect.value !== 'custom' && ipSelect.value && !window.location.origin.includes('github.io')) {
+                origin = `http://${ipSelect.value}:${window.location.port || 3000}`;
             }
-            
-            const port = window.location.port || (window.location.protocol === 'https:' ? '443' : '3000');
-            const baseHost = hostIp.includes(':') ? hostIp : `${hostIp}:${port}`;
-            const origin = `http://${baseHost}`;
 
             const pwd = SCOREKEEPER_PASSWORD || '2222';
-            let url = `${origin}/?view=scorekeeper&pwd=${encodeURIComponent(pwd)}`;
+            let url = `${origin}/?room=${encodeURIComponent(cloudRoomId)}&view=scorekeeper&pwd=${encodeURIComponent(pwd)}&auth=true`;
             if (targetLane && targetLane !== 'all') {
                 url += `&lane=${targetLane}`;
             }
@@ -920,10 +1151,19 @@
         function updateConnectionBadge() {
             const el = document.getElementById('conn-status-badge');
             if (!el) return;
-            if (isConnectedToServer) {
-                el.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> 雲端即時連線中 (雙向同步)</span>`;
+            if (isConnectedToServer || isCloudConnected) {
+                const connType = isConnectedToServer ? '📡 區網主機同步中' : `☁️ 雲端全場同步中 [${cloudRoomId}]`;
+                el.innerHTML = `
+                    <button onclick="openSyncSettingsModal()" title="點擊檢視連線狀態或切換房間" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 shadow-sm transition-all active:scale-95 cursor-pointer">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> ${connType} ⚙️
+                    </button>
+                `;
             } else {
-                el.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-300 shadow-sm"><span class="w-2 h-2 rounded-full bg-amber-500"></span> 本地離線暫存模式 (單機/跨視窗連動)</span>`;
+                el.innerHTML = `
+                    <button onclick="openSyncSettingsModal()" title="點擊檢視連線狀態或切換房間" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 shadow-sm transition-all active:scale-95 cursor-pointer">
+                        <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> ⚠️ 單機離線 (點此連線/切換房間)
+                    </button>
+                `;
             }
         }
 
@@ -1417,6 +1657,7 @@
                 player[field] = value;
                 saveToLocalStorage();
 
+                // 1. 本地 Socket.IO 廣播
                 if (socket && socket.connected) {
                     socket.emit('player:field_change', {
                         lane,
@@ -1425,6 +1666,13 @@
                         value
                     });
                 }
+
+                // 2. 雲端跨網即時廣播 (跨 Wi-Fi / 4G / GitHub Pages)
+                broadcastCloudEvent('lane_updated', {
+                    lane: parseInt(lane, 10),
+                    players: lanesData[lane],
+                    updatedField: { playerOrder: pId, field, value }
+                });
             }
         }
 
@@ -1459,6 +1707,7 @@
                 player[field] = num;
                 saveToLocalStorage();
 
+                // 1. 本地 Socket.IO 廣播
                 if (socket && socket.connected) {
                     socket.emit('player:field_change', {
                         lane,
@@ -1467,6 +1716,14 @@
                         value: num
                     });
                 }
+
+                // 2. 雲端跨網即時廣播
+                broadcastCloudEvent('lane_updated', {
+                    lane: parseInt(lane, 10),
+                    players: lanesData[lane],
+                    updatedField: { playerOrder: pId, field, value: num }
+                });
+
                 renderScorekeeperPlayers();
             }
         }
@@ -1501,6 +1758,7 @@
             saveToLocalStorage();
             window.dispatchEvent(new Event('storage'));
 
+            // 1. 本地 Socket.IO / REST 存檔
             if (socket && socket.connected) {
                 socket.emit('lane:save_scores', {
                     lane: skSelectedLane,
@@ -1521,7 +1779,14 @@
                 } catch (e) {}
             }
 
-            showToast(`第 ${skSelectedGame} 局成績儲存成功！全場已同步`);
+            // 2. 雲端跨網即時廣播
+            broadcastCloudEvent('lane_updated', {
+                lane: parseInt(skSelectedLane, 10),
+                players: lanesData[skSelectedLane],
+                game: parseInt(skSelectedGame, 10)
+            });
+
+            showToast(`第 ${skSelectedGame} 局成績儲存成功！全場已即時同步`, 'success');
         }
 
         // ==========================================
@@ -1979,6 +2244,13 @@
             } catch (e) {
                 console.warn('離線或伺服器未連線，已儲存於本機');
             }
+
+            // 3. 雲端跨網即時廣播
+            broadcastCloudEvent('lane_updated', {
+                lane: parseInt(lane, 10),
+                players: lanesData[lane],
+                game: parseInt(game, 10)
+            });
 
             closeOcrModal();
             skSelectedLane = String(lane);
@@ -3032,6 +3304,15 @@
                 } catch (e) {}
             }
 
+            broadcastCloudEvent('settings_updated', {
+                settings: {
+                    event_name: EVENT_NAME,
+                    female_bonus: FEMALE_BONUS,
+                    total_lanes: TOTAL_LANES,
+                    scorekeeper_password: SCOREKEEPER_PASSWORD
+                }
+            });
+
             showToast('賽事設定儲存成功！', 'success');
             renderCurrentView();
         }
@@ -3299,6 +3580,10 @@
                 }
 
                 if (success) {
+                    broadcastCloudEvent('bulk_updated', {
+                        data: lanesData,
+                        message: '名冊已更新並全場完成同步！'
+                    });
                     showToast(`✅ ${resultMsg}`, 'success');
                     if (statusMsg) statusMsg.innerHTML = `<span class="text-emerald-700 font-black">✅ ${resultMsg}</span>`;
                     input.value = '';
@@ -3331,15 +3616,13 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ message: msg })
                     });
-                    input.value = '';
-                    showToast('全場廣播發送成功！');
-                } catch (e) {
-                    showBroadcast(msg, 6000);
-                }
-            } else {
-                showBroadcast(msg, 6000);
-                input.value = '';
+                } catch (e) {}
             }
+
+            broadcastCloudEvent('announcement', { message: msg, duration: 8000 });
+            showBroadcast(msg, 8000);
+            input.value = '';
+            showToast('全場廣播發送成功！', 'success');
         }
 
         async function clearOnlyScores() {
@@ -3353,19 +3636,25 @@
                             body: JSON.stringify({ mode: 'clear_scores' })
                         });
                     } catch (e) {}
-                } else {
-                    for (let i = 1; i <= TOTAL_LANES; i++) {
-                        if (lanesData[i]) {
-                            lanesData[i].forEach(p => {
-                                p.g1 = ''; p.g2 = ''; p.g3 = '';
-                                p.turkeys = 0; p.flowers = 0;
-                            });
-                        }
-                    }
-                    saveToLocalStorage();
-                    renderCurrentView();
                 }
-                showToast('已成功清空全場分數');
+
+                for (let i = 1; i <= TOTAL_LANES; i++) {
+                    if (lanesData[i]) {
+                        lanesData[i].forEach(p => {
+                            p.g1 = ''; p.g2 = ''; p.g3 = '';
+                            p.turkeys = 0; p.flowers = 0;
+                        });
+                    }
+                }
+                saveToLocalStorage();
+                renderCurrentView();
+
+                broadcastCloudEvent('bulk_updated', {
+                    data: lanesData,
+                    message: '全場分數已清空並同步！'
+                });
+
+                showToast('已成功清空全場分數', 'info');
             }
         }
 
@@ -3383,12 +3672,18 @@
                         body: JSON.stringify({ mode: 'seed' })
                     });
                 } catch (e) {}
-            } else {
-                localStorage.removeItem(STORAGE_KEY);
-                seedDefaultData();
-                renderCurrentView();
             }
-            showToast('已成功重新生成預設示範名冊');
+
+            localStorage.removeItem(STORAGE_KEY);
+            seedDefaultData();
+            renderCurrentView();
+
+            broadcastCloudEvent('bulk_updated', {
+                data: lanesData,
+                message: '已重新生成示範名冊並全場同步！'
+            });
+
+            showToast('已成功重新生成預設示範名冊', 'info');
         }
 
         // ==========================================
