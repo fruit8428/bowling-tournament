@@ -8,8 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Socket.IO Client CDN -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <!-- MQTT.js CDN for zero-config global cloud real-time synchronization -->
-    <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+    <!-- MQTT.js CDN (High-speed jsDelivr) for zero-config global cloud real-time synchronization -->
+    <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
     <!-- SheetJS CDN (for client-side Excel / CSV parsing & fallback) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
@@ -3764,9 +3764,11 @@
         // ==========================================
         // 頁面啟動入口
         // ==========================================
-        window.addEventListener('DOMContentLoaded', () => {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
             initApp();
-        });
+        }
     </script>
 </body>
 </html>
