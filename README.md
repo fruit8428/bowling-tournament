@@ -1,5 +1,9 @@
 # 🎳 保齡球賽事即時記分與大會總表系統 (Bowling Tournament Live System)
 
+> 🌟 **線上正式版網址**：[https://fruit8428.github.io/bowling-tournament/](https://fruit8428.github.io/bowling-tournament/)
+> 
+> 📲 **手機記分員直達**：[https://fruit8428.github.io/bowling-tournament/?room=bowling2026&view=scorekeeper&pwd=2222&auth=true](https://fruit8428.github.io/bowling-tournament/?room=bowling2026&view=scorekeeper&pwd=2222&auth=true)
+
 本系統是一套專為保齡球聯誼賽／錦標賽打造的**全端即時記分與大會總表管理系統**。前端基於 `bowling.html` 進行全方位升級，後端採用 **Node.js (Express + Socket.IO + SQLite / better-sqlite3 + Excel Engine)**，具備毫秒級雙向即時同步、雙視窗／多設備協同、離線備援與完整的 Excel 報表匯出入功能。
 
 ---
