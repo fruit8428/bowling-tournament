@@ -2339,6 +2339,13 @@
                             <!-- 篩選器與控制工具列 -->
                             <div class="flex flex-wrap items-center gap-2.5 no-print">
                                 
+                                <!-- 🏆 即時排名與獎項榜快捷鍵 (極度醒目，方便一般參賽者第一時間速查名次與獎項) -->
+                                <button onclick="navigateTo('leaderboard')" class="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-amber-500/30 border border-amber-300 transition-all active:scale-95 cursor-pointer">
+                                    <span class="text-lg">🏆</span>
+                                    <span>即時排名與獎項榜</span>
+                                    <span class="bg-white/25 px-2 py-0.5 rounded-lg text-xs font-black tracking-wide">速查 ➔</span>
+                                </button>
+
                                 <!-- 檢視模式切換 (完整大表 vs 手機精簡) -->
                                 <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-black">
                                     <button onclick="setDashboardViewMode('full')" class="px-3 py-1.5 rounded-lg transition-all ${dbViewMode === 'full' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}">📊 完整 15 欄</button>
@@ -2389,8 +2396,25 @@
                         </div>
                     </div>
 
+                    <!-- 手機端超顯眼即時排名與獎項榜快捷橫幅 -->
+                    <div class="lg:hidden p-3 pb-0 bg-slate-100">
+                        <button onclick="navigateTo('leaderboard')" class="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 active:scale-98 text-white rounded-2xl text-sm font-black shadow-lg shadow-orange-500/25 border-2 border-amber-300 flex items-center justify-between transition-all cursor-pointer">
+                            <div class="flex items-center gap-2.5">
+                                <span class="text-2xl p-1 bg-white/20 rounded-xl shadow-inner">🏆</span>
+                                <div class="text-left">
+                                    <div class="font-black text-sm sm:text-base text-white tracking-wide">點此查看【即時排名與獎項榜】</div>
+                                    <div class="text-[11px] text-amber-100 font-medium">男女個人名次 • 分區/社團總排 • 特別獎項</div>
+                                </div>
+                            </div>
+                            <div class="bg-white text-orange-700 px-3 py-1.5 rounded-xl font-black text-xs shadow-md flex items-center gap-1 shrink-0">
+                                <span>速查</span>
+                                <span>➔</span>
+                            </div>
+                        </button>
+                    </div>
+
                     <!-- 手機專用頂部浮動導航切換列 -->
-                    <div class="lg:hidden bg-slate-900 text-white p-3 shadow-md shrink-0 flex flex-col gap-2 border-b border-slate-800">
+                    <div class="lg:hidden bg-slate-900 text-white p-3 shadow-md shrink-0 flex flex-col gap-2 border-b border-slate-800 m-3 mb-1 rounded-2xl">
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-bold text-slate-300 flex items-center gap-1">
                                 <span>📱</span> 檢視模式：
@@ -2728,9 +2752,14 @@
                                     自動即時運算個人總成績、男女分組名次、社團團體總積分及特殊獎項
                                 </p>
                             </div>
-                            <button onclick="navigateTo('home')" class="px-5 py-2.5 bg-white/20 hover:bg-white/30 border border-white/30 text-white rounded-2xl font-black transition-all active:scale-95 text-sm shadow-sm">
-                                返回首頁
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button onclick="navigateTo('dashboard')" class="px-5 py-2.5 bg-white text-slate-900 hover:bg-slate-100 rounded-2xl font-black transition-all active:scale-95 text-sm shadow-md flex items-center gap-1.5 cursor-pointer">
+                                    <span>🎳</span> 返回大會即時總表
+                                </button>
+                                <button onclick="navigateTo('home')" class="px-4 py-2.5 bg-white/20 hover:bg-white/30 border border-white/30 text-white rounded-2xl font-black transition-all active:scale-95 text-sm shadow-sm cursor-pointer">
+                                    首頁
+                                </button>
+                            </div>
                         </div>
 
                         <!-- 頁籤選單 (明亮按鈕) -->
