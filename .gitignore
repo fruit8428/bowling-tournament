@@ -8,3 +8,5 @@ eng.traineddata
 *.log
 .env
 .tempmediaStorage/
+.vercel
+.env*

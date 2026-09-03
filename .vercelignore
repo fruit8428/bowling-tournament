@@ -1,0 +1,10 @@
+node_modules/
+.git/
+data/
+*.db
+*.db-*
+eng.traineddata
+screenshot_*.png
+start.bat
+start.sh
+.DS_Store
