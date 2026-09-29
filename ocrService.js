@@ -176,29 +176,56 @@ class OcrService {
         const turkeys = [0, 0, 0, 0];
         const flowers = [0, 0, 0, 0];
 
-        // 1. 辨識球道牌 (Lane sign - 通常在影像上方 0% ~ 22% 區塊)
+        // 1. 智慧搜尋上方球道號碼牌 (Lane sign - 搜尋影像上方 0% ~ 22% 區塊)
         try {
-            const laneCrop = await sharp(imageBuffer)
-                .extract({
-                    left: Math.floor(width * 0.35),
-                    top: Math.floor(height * 0.02),
-                    width: Math.floor(width * 0.30),
-                    height: Math.floor(height * 0.20)
-                })
-                .resize(300)
-                .extractChannel(1) // 綠色通道加強紅色文字對比
-                .linear(2.5, -120)
-                .threshold(120)
-                .extend({ top: 30, bottom: 30, left: 30, right: 30, background: '#ffffff' })
-                .toBuffer();
+            const scanH = Math.floor(height * 0.22);
+            const { data } = await sharp(imageBuffer)
+                .extract({ left: 0, top: 0, width, height: scanH })
+                .raw()
+                .toBuffer({ resolveWithObject: true });
 
-            const laneOcr = await Tesseract.recognize(laneCrop, 'eng', {
-                tessedit_char_whitelist: '0123456789',
-                tessedit_pageseg_mode: '7'
-            });
-            const laneMatch = laneOcr.data.text.replace(/\D/g, '');
-            if (laneMatch) {
-                const laneNum = parseInt(laneMatch, 10);
+            let minX = width, maxX = 0, minY = scanH, maxY = 0, redCount = 0;
+            for (let y = 0; y < scanH; y++) {
+                for (let x = Math.floor(width * 0.15); x < Math.floor(width * 0.85); x++) {
+                    const idx = (y * width + x) * 3;
+                    const r = data[idx], g = data[idx+1], b = data[idx+2];
+                    if (r - Math.max(g, b) > 18) {
+                        redCount++;
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+
+            if (redCount > 100 && maxX > minX && maxY > minY) {
+                const padX = Math.floor((maxX - minX) * 0.25);
+                const padY = Math.floor((maxY - minY) * 0.25);
+                const cX = Math.max(0, minX - padX);
+                const cY = Math.max(0, minY - padY);
+                const cW = Math.min(width - cX, (maxX - minX) + padX * 2);
+                const cH = Math.min(scanH - cY, (maxY - minY) + padY * 2);
+
+                const crop = await sharp(imageBuffer)
+                    .extract({ left: cX, top: cY, width: cW, height: cH })
+                    .raw()
+                    .toBuffer({ resolveWithObject: true });
+
+                const binarized = Buffer.alloc(cW * cH);
+                for (let i = 0, j = 0; i < crop.data.length; i += 3, j++) {
+                    const r = crop.data[i], g = crop.data[i+1], b = crop.data[i+2];
+                    binarized[j] = (r - Math.max(g, b) > 18) ? 0 : 255;
+                }
+
+                const imgBuf = await sharp(binarized, { raw: { width: cW, height: cH, channels: 1 } })
+                    .resize(320, null, { kernel: 'nearest' })
+                    .extend({ top: 30, bottom: 30, left: 30, right: 30, background: '#ffffff' })
+                    .png()
+                    .toBuffer();
+
+                const res = await Tesseract.recognize(imgBuf, 'eng', { tessedit_char_whitelist: '0123456789' });
+                const laneNum = parseInt(res.data.text.replace(/\D/g, ''), 10);
                 if (laneNum >= 1 && laneNum <= 40) {
                     detectedLane = laneNum;
                 }
@@ -208,60 +235,56 @@ class OcrService {
         }
 
         // 2. 辨識 4 位選手的第 10 格累積總分 (Frame 10 final score)
-        // 典型保齡球螢幕（如 Funview / AMF / Brunswick）：
-        // 總分位於右側 82% ~ 97%，垂直方向均勻分佈為 4 行
-        const rowConfigs = [
-            { p: 1, top: 0.455, left: 0.825, width: 0.12, height: 0.052 },
-            { p: 2, top: 0.585, left: 0.825, width: 0.12, height: 0.052 },
-            { p: 3, top: 0.715, left: 0.825, width: 0.12, height: 0.052 },
-            { p: 4, top: 0.835, left: 0.825, width: 0.12, height: 0.052 }
-        ];
-
-        for (let i = 0; i < 4; i++) {
-            const cfg = rowConfigs[i];
-            let bestScore = '';
-            
-            // 多重閾值掃描 (Threshold Sweeps) 提高不同螢幕亮度下的辨識率
-            const thresholdLevels = [120, 135, 150];
-            for (const th of thresholdLevels) {
-                try {
-                    const scoreBuf = await sharp(imageBuffer)
-                        .extract({
-                            left: Math.floor(width * cfg.left),
-                            top: Math.floor(height * cfg.top),
-                            width: Math.floor(width * cfg.width),
-                            height: Math.floor(height * cfg.height)
-                        })
-                        .resize(260, null, { kernel: 'lanczos3' })
-                        .grayscale()
-                        .threshold(th)
-                        .extend({ top: 30, bottom: 30, left: 30, right: 30, background: '#ffffff' })
-                        .toBuffer();
-
-                    const ocrRes = await Tesseract.recognize(scoreBuf, 'eng', {
-                        tessedit_char_whitelist: '0123456789',
-                        tessedit_pageseg_mode: '7'
-                    });
-
-                    const digits = ocrRes.data.text.replace(/\D/g, '');
-                    if (digits) {
-                        const val = parseInt(digits, 10);
-                        if (val >= 0 && val <= 300) {
-                            bestScore = val;
-                            break;
-                        }
-                    }
-                } catch (err) {
-                    // continue
-                }
-            }
-
-            scores[i] = bestScore !== '' ? bestScore : '';
+        function cleanBowlingScore(raw) {
+            if (!raw) return '';
+            let s = raw.trim();
+            s = s.replace(/\"/g, '5')
+                 .replace(/[=\)\]\}]/g, '3')
+                 .replace(/[CQq]/g, '9')
+                 .replace(/[BG]/g, '8')
+                 .replace(/[OoD]/g, '0')
+                 .replace(/[Il|!]/g, '1')
+                 .replace(/[Ss]/g, '5');
+            const digits = s.replace(/\D/g, '');
+            const num = parseInt(digits, 10);
+            return (num >= 0 && num <= 300) ? num : '';
         }
 
-        for (let i = 0; i < 4; i++) {
-            if (scores[i] === 198) scores[i] = 98;
-            if (scores[i] === 102) scores[i] = 103;
+        const configs = [
+            { topPct: 0.472, hPct: 0.036 },
+            { topPct: 0.600, hPct: 0.036 },
+            { topPct: 0.724, hPct: 0.036 },
+            { topPct: 0.840, hPct: 0.038 }
+        ];
+        const sLeft = Math.floor(width * 0.82);
+        const sWidth = Math.floor(width * 0.10);
+
+        for (let i = 0; i < configs.length; i++) {
+            const cfg = configs[i];
+            const sTop = Math.floor(height * cfg.topPct);
+            const sHeight = Math.floor(height * cfg.hPct);
+
+            let bestScore = '';
+            for (const th of [138, 120, 150]) {
+                try {
+                    const scoreBuf = await sharp(imageBuffer)
+                        .extract({ left: sLeft, top: sTop, width: sWidth, height: sHeight })
+                        .resize(250, null, { kernel: 'lanczos3' })
+                        .grayscale()
+                        .threshold(th)
+                        .extend({ top: 35, bottom: 35, left: 35, right: 35, background: '#ffffff' })
+                        .png()
+                        .toBuffer();
+
+                    const ocrRes = await Tesseract.recognize(scoreBuf, 'eng');
+                    const parsed = cleanBowlingScore(ocrRes.data.text);
+                    if (parsed !== '') {
+                        bestScore = parsed;
+                        break;
+                    }
+                } catch (err) {}
+            }
+            scores[i] = bestScore !== '' ? bestScore : '';
         }
 
         const validCount = scores.filter(s => s !== '').length;
@@ -273,7 +296,7 @@ class OcrService {
             scores,
             turkeys,
             flowers,
-            confidence: validCount >= 2 ? 0.90 : 0.70,
+            confidence: validCount >= 2 ? 0.95 : 0.70,
             message: `本機電腦視覺已辨識完成（辨識出 ${validCount}/4 位選手成績）`
         };
     }

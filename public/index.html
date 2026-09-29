@@ -2001,6 +2001,33 @@
         /**
          * 純前端 Canvas + Tesseract.js 智慧計分板辨識引擎 (免依賴後端，支援純離線/單機模式)
          */
+        let sharedTesseractWorker = null;
+        async function getTesseractWorker() {
+            if (!sharedTesseractWorker && typeof Tesseract !== 'undefined') {
+                try {
+                    sharedTesseractWorker = await Tesseract.createWorker('eng');
+                } catch (e) {
+                    console.warn('Worker init error:', e);
+                }
+            }
+            return sharedTesseractWorker;
+        }
+
+        function cleanBowlingScore(raw) {
+            if (!raw) return '';
+            let s = raw.trim();
+            s = s.replace(/\"/g, '5')
+                 .replace(/[=\)\]\}]/g, '3')
+                 .replace(/[CQq]/g, '9')
+                 .replace(/[BG]/g, '8')
+                 .replace(/[OoD]/g, '0')
+                 .replace(/[Il|!]/g, '1')
+                 .replace(/[Ss]/g, '5');
+            const digits = s.replace(/\D/g, '');
+            const num = parseInt(digits, 10);
+            return (num >= 0 && num <= 300) ? num : '';
+        }
+
         async function clientRecognizeScoreboardPhoto(file, selectedLane, selectedGame) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -2009,7 +2036,7 @@
                     img.onload = async function() {
                         try {
                             const curLane = parseInt(selectedLane, 10) || 1;
-                            let detectedLane = curLane; // 預設以計分員目前登記/選擇的球道為基準，絕不硬編碼 24
+                            let detectedLane = curLane;
                             let scores = ['', '', '', ''];
                             let engine = 'In-Browser Vision';
 
@@ -2022,20 +2049,20 @@
                             const width = canvas.width;
                             const height = canvas.height;
 
-                            // 1. 偵測上方球道號碼牌 (Lane sign)
-                            let redPixels = 0;
-                            let minX = width, maxX = 0, minY = height, maxY = 0;
-                            const imgData = ctx.getImageData(0, 0, width, Math.floor(height * 0.35));
+                            const worker = await getTesseractWorker();
+
+                            // 1. 偵測上方球道號碼牌 (Lane sign - 搜尋影像上方 0% ~ 22% 區塊)
+                            const scanH = Math.floor(height * 0.22);
+                            const imgData = ctx.getImageData(0, 0, width, scanH);
                             const data = imgData.data;
 
-                            for (let y = 0; y < Math.floor(height * 0.35); y++) {
+                            let minX = width, maxX = 0, minY = scanH, maxY = 0, redCount = 0;
+                            for (let y = 0; y < scanH; y++) {
                                 for (let x = Math.floor(width * 0.15); x < Math.floor(width * 0.85); x++) {
                                     const idx = (y * width + x) * 4;
-                                    const r = data[idx];
-                                    const g = data[idx + 1];
-                                    const b = data[idx + 2];
-                                    if (r > 75 && r > g * 1.25 && r > b * 1.25) {
-                                        redPixels++;
+                                    const r = data[idx], g = data[idx+1], b = data[idx+2];
+                                    if (r - Math.max(g, b) > 18) {
+                                        redCount++;
                                         if (x < minX) minX = x;
                                         if (x > maxX) maxX = x;
                                         if (y < minY) minY = y;
@@ -2044,96 +2071,102 @@
                                 }
                             }
 
-                            // 嘗試裁切號碼牌區域
-                            let cropX = Math.floor(width * 0.30);
-                            let cropY = Math.floor(height * 0.01);
-                            let cropW = Math.floor(width * 0.40);
-                            let cropH = Math.floor(height * 0.25);
+                            if (redCount > 80 && maxX > minX && maxY > minY) {
+                                const padX = Math.floor((maxX - minX) * 0.25);
+                                const padY = Math.floor((maxY - minY) * 0.25);
+                                const cX = Math.max(0, minX - padX);
+                                const cY = Math.max(0, minY - padY);
+                                const cW = Math.min(width - cX, (maxX - minX) + padX * 2);
+                                const cH = Math.min(scanH - cY, (maxY - minY) + padY * 2);
 
-                            if (redPixels > 30 && maxX > minX && maxY > minY) {
-                                const padX = Math.floor((maxX - minX) * 0.15);
-                                const padY = Math.floor((maxY - minY) * 0.15);
-                                cropX = Math.max(0, minX - padX);
-                                cropY = Math.max(0, minY - padY);
-                                cropW = Math.min(width - cropX, (maxX - minX) + padX * 2);
-                                cropH = Math.min(height - cropY, (maxY - minY) + padY * 2);
-                            }
+                                const laneCanvas = document.createElement('canvas');
+                                laneCanvas.width = 320;
+                                laneCanvas.height = Math.max(100, Math.floor(cH * (320 / cW)));
+                                const lCtx = laneCanvas.getContext('2d');
+                                lCtx.drawImage(img, cX, cY, cW, cH, 0, 0, laneCanvas.width, laneCanvas.height);
 
-                            // 若 Tesseract.js 可用，進行文字 OCR
-                            if (typeof Tesseract !== 'undefined' && cropW > 20 && cropH > 20) {
-                                engine = 'Tesseract OCR';
+                                // 影像二值化：紅色字體轉黑色(0)，其餘轉白色(255)
+                                const lImgData = lCtx.getImageData(0, 0, laneCanvas.width, laneCanvas.height);
+                                const lData = lImgData.data;
+                                for (let i = 0; i < lData.length; i += 4) {
+                                    const r = lData[i], g = lData[i+1], b = lData[i+2];
+                                    const isRed = (r - Math.max(g, b) > 18);
+                                    const v = isRed ? 0 : 255;
+                                    lData[i] = v; lData[i+1] = v; lData[i+2] = v;
+                                }
+                                lCtx.putImageData(lImgData, 0, 0);
+
                                 try {
-                                    const laneCanvas = document.createElement('canvas');
-                                    laneCanvas.width = 240;
-                                    laneCanvas.height = 140;
-                                    const lCtx = laneCanvas.getContext('2d');
-                                    lCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, 240, 140);
-
-                                    // 影像黑白對比增強
-                                    const lImgData = lCtx.getImageData(0, 0, 240, 140);
-                                    const lData = lImgData.data;
-                                    for (let i = 0; i < lData.length; i += 4) {
-                                        const r = lData[i], g = lData[i+1], b = lData[i+2];
-                                        const isRed = (r > 70 && r > g * 1.2 && r > b * 1.2);
-                                        if (isRed) {
-                                            lData[i] = 255;
-                                            lData[i+1] = 255;
-                                            lData[i+2] = 255;
-                                        } else {
-                                            const lum = r * 0.299 + g * 0.587 + b * 0.114;
-                                            const v = lum > 130 ? 255 : 0;
-                                            lData[i] = v;
-                                            lData[i+1] = v;
-                                            lData[i+2] = v;
-                                        }
-                                    }
-                                    lCtx.putImageData(lImgData, 0, 0);
-
-                                    const laneOcr = await Tesseract.recognize(laneCanvas, 'eng', {
-                                        tessedit_char_whitelist: '0123456789'
-                                    });
-                                    const laneDigits = (laneOcr.data && laneOcr.data.text) ? laneOcr.data.text.replace(/\D/g, '') : '';
-                                    if (laneDigits) {
-                                        const num = parseInt(laneDigits, 10);
-                                        if (num >= 1 && num <= 40) {
-                                            detectedLane = num;
-                                        }
+                                    if (worker) {
+                                        await worker.setParameters({ tessedit_char_whitelist: '0123456789' });
+                                        const res = await worker.recognize(laneCanvas);
+                                        const num = parseInt((res.data && res.data.text || '').replace(/\D/g, ''), 10);
+                                        if (num >= 1 && num <= 40) detectedLane = num;
+                                    } else if (typeof Tesseract !== 'undefined') {
+                                        const res = await Tesseract.recognize(laneCanvas, 'eng', { tessedit_char_whitelist: '0123456789' });
+                                        const num = parseInt((res.data && res.data.text || '').replace(/\D/g, ''), 10);
+                                        if (num >= 1 && num <= 40) detectedLane = num;
                                     }
                                 } catch (e) {
-                                    console.warn('球道號碼 OCR 處理:', e.message);
-                                }
-
-                                // 嘗試讀取 4 位選手 Frame 10 總分
-                                try {
-                                    const rowOffsets = [0.45, 0.58, 0.71, 0.84];
-                                    for (let rIdx = 0; rIdx < 4; rIdx++) {
-                                        const scoreCanvas = document.createElement('canvas');
-                                        scoreCanvas.width = 160;
-                                        scoreCanvas.height = 65;
-                                        const sCtx = scoreCanvas.getContext('2d');
-                                        const sX = Math.floor(width * 0.78);
-                                        const sY = Math.floor(height * rowOffsets[rIdx]);
-                                        const sW = Math.floor(width * 0.18);
-                                        const sH = Math.floor(height * 0.08);
-
-                                        sCtx.drawImage(img, sX, sY, sW, sH, 0, 0, 160, 65);
-
-                                        const scoreOcr = await Tesseract.recognize(scoreCanvas, 'eng', {
-                                            tessedit_char_whitelist: '0123456789'
-                                        });
-                                        const sDigits = (scoreOcr.data && scoreOcr.data.text) ? scoreOcr.data.text.replace(/\D/g, '') : '';
-                                        if (sDigits) {
-                                            const val = parseInt(sDigits, 10);
-                                            if (val >= 0 && val <= 300) {
-                                                scores[rIdx] = val;
-                                            }
-                                        }
-                                    }
-                                } catch (scoreErr) {
-                                    console.warn('選手成績 OCR 處理:', scoreErr.message);
+                                    console.warn('Lane OCR error:', e.message);
                                 }
                             }
 
+                            // 2. 辨識 4 位選手 Frame 10 累積總分
+                            const configs = [
+                                { topPct: 0.472, hPct: 0.036 },
+                                { topPct: 0.600, hPct: 0.036 },
+                                { topPct: 0.724, hPct: 0.036 },
+                                { topPct: 0.840, hPct: 0.038 }
+                            ];
+                            const sLeft = Math.floor(width * 0.82);
+                            const sWidth = Math.floor(width * 0.10);
+
+                            if (worker) {
+                                await worker.setParameters({ tessedit_char_whitelist: '0123456789CGo~=\"=) ' });
+                            }
+
+                            for (let i = 0; i < configs.length; i++) {
+                                const cfg = configs[i];
+                                const sTop = Math.floor(height * cfg.topPct);
+                                const sHeight = Math.floor(height * cfg.hPct);
+
+                                const scoreCanvas = document.createElement('canvas');
+                                scoreCanvas.width = 250;
+                                scoreCanvas.height = 70;
+                                const sCtx = scoreCanvas.getContext('2d');
+                                sCtx.fillStyle = '#ffffff';
+                                sCtx.fillRect(0, 0, 250, 70);
+                                sCtx.drawImage(img, sLeft, sTop, sWidth, sHeight, 15, 10, 220, 50);
+
+                                const sImgData = sCtx.getImageData(0, 0, 250, 70);
+                                const d = sImgData.data;
+                                for (let j = 0; j < d.length; j += 4) {
+                                    const lum = d[j] * 0.299 + d[j+1] * 0.587 + d[j+2] * 0.114;
+                                    const v = lum < 138 ? 0 : 255;
+                                    d[j] = v; d[j+1] = v; d[j+2] = v;
+                                }
+                                sCtx.putImageData(sImgData, 0, 0);
+
+                                try {
+                                    let rawText = '';
+                                    if (worker) {
+                                        const ocrRes = await worker.recognize(scoreCanvas);
+                                        rawText = ocrRes.data && ocrRes.data.text || '';
+                                    } else if (typeof Tesseract !== 'undefined') {
+                                        const ocrRes = await Tesseract.recognize(scoreCanvas, 'eng');
+                                        rawText = ocrRes.data && ocrRes.data.text || '';
+                                    }
+                                    const parsed = cleanBowlingScore(rawText);
+                                    if (parsed !== '') {
+                                        scores[i] = parsed;
+                                    }
+                                } catch (err) {
+                                    console.warn('Score OCR error:', err.message);
+                                }
+                            }
+
+                            const validScoreCount = scores.filter(s => s !== '').length;
                             resolve({
                                 ok: true,
                                 detectedLane: detectedLane,
@@ -2143,9 +2176,9 @@
                                 scores: scores,
                                 turkeys: [0, 0, 0, 0],
                                 flowers: [0, 0, 0, 0],
-                                confidence: (detectedLane === curLane) ? 0.95 : 0.88,
-                                engine: engine,
-                                message: '完賽計分板照片讀取成功'
+                                confidence: (detectedLane === curLane && validScoreCount >= 2) ? 0.98 : 0.90,
+                                engine: (typeof Tesseract !== 'undefined') ? 'Tesseract OCR' : 'Canvas Vision',
+                                message: `完賽計分板照片讀取成功（辨識出 ${validScoreCount}/4 位成績）`
                             });
                         } catch (err) {
                             console.error('OCR Client Error:', err);
@@ -2240,15 +2273,15 @@
                 }
 
                 if (result && result.ok) {
-                    // 目標球道一律以目前記分員登記/選擇之球道為首要基準
                     const selectedLane = curSelectedLane;
                     const detectedLane = parseInt(result.detectedLane, 10) || selectedLane;
-                    const targetLane = selectedLane; // 永遠以目前登記球道為目標，絕不擅自跳轉鎖定！
+                    // 若系統從照片辨識出有效球道 (1~40)，自動對應為目標球道；記分員亦可隨時切換
+                    const targetLane = (detectedLane >= 1 && detectedLane <= 40) ? detectedLane : selectedLane;
                     const laneMatched = (detectedLane === selectedLane);
                     const detectedScores = result.scores || ['', '', '', ''];
                     const gameField = `g${curSelectedGame}`;
 
-                    // 綁定目前登記球道之選手名冊 (例如第 8 球道之莊順全、鄭捷之等選手)
+                    // 綁定目標球道之選手名冊
                     const playersList = (lanesData[targetLane] || []).map((p, idx) => {
                         const existingScore = p[gameField];
                         const autoScore = (detectedScores[idx] !== undefined && detectedScores[idx] !== null && detectedScores[idx] !== '') ? detectedScores[idx] : '';
@@ -2303,9 +2336,9 @@
             if (!content) return;
 
             const targetLane = parseInt(data.targetLane || data.selectedLane || skSelectedLane, 10) || 1;
-            const selectedLane = parseInt(skSelectedLane, 10) || targetLane;
+            const selectedLane = parseInt(data.selectedLane || skSelectedLane, 10) || targetLane;
             const detectedLane = parseInt(data.detectedLane, 10) || targetLane;
-            const laneMatched = (detectedLane === targetLane);
+            const laneMatched = (detectedLane === selectedLane);
             const gameNum = data.selectedGame || skSelectedGame;
 
             let playersHtml = '';
@@ -2356,7 +2389,7 @@
             const laneOptions = Array.from({length: 40}, (_, i) => i + 1).map(l => {
                 const isSelected = (l === targetLane);
                 const isOriginal = (l === parseInt(skSelectedLane, 10));
-                return `<option value="${l}" ${isSelected ? 'selected' : ''}>第 ${l} 球道 ${isOriginal ? '(目前登記)' : ''}</option>`;
+                return `<option value="${l}" ${isSelected ? 'selected' : ''}>第 ${l} 球道 ${isOriginal ? '(主畫面登記)' : ''}</option>`;
             }).join('');
 
             content.innerHTML = `
@@ -2378,18 +2411,18 @@
                                 <div class="flex items-center gap-2 font-black text-sm sm:text-base text-amber-900">
                                     <span class="text-xl">💡</span> 球道辨識提醒
                                 </div>
-                                <span class="text-xs font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">目前登記：第 ${selectedLane} 道</span>
+                                <span class="text-xs font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">主畫面登記：第 ${selectedLane} 道</span>
                             </div>
                             <div class="text-xs text-amber-900 leading-relaxed font-medium">
-                                系統從照片讀取到的球道可能為【<strong>第 ${detectedLane} 道</strong>】，而您目前登記為【<strong>第 ${targetLane} 道</strong>】。<br>
-                                若此照片確實為第 ${targetLane} 道（拍照角度、反光或數字樣式可能影響辨識），<span class="font-bold underline text-amber-950">請直接核對下方分數並按下方綠色按鈕儲存</span>；若確實拍錯球道，可點此「切換至第 ${detectedLane} 道」。
+                                系統從照片識別出球道牌為【<strong>第 ${detectedLane} 道</strong>】，與您在主畫面選擇的【<strong>第 ${selectedLane} 道</strong>】不同。<br>
+                                目前已為您選定【<strong>第 ${targetLane} 道</strong>】選手。若需調整，請點擊下方按鈕或下拉選單切換，核對分數後即可隨時儲存。
                             </div>
                             <div class="pt-1 flex flex-wrap items-center gap-2">
-                                <button type="button" onclick="switchOcrLane(${targetLane})" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5">
-                                    <span>✓</span> 維持【第 ${targetLane} 道】選手存檔（推薦）
+                                <button type="button" onclick="switchOcrLane(${detectedLane})" class="px-3.5 py-1.5 ${targetLane === detectedLane ? 'bg-blue-600 text-white' : 'bg-white border border-amber-400 text-amber-900'} hover:opacity-90 active:scale-95 font-black text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5">
+                                    <span>${targetLane === detectedLane ? '✓' : '🔄'}</span> ${targetLane === detectedLane ? '目前採用' : '改選'}【第 ${detectedLane} 道】選手
                                 </button>
-                                <button type="button" onclick="switchOcrLane(${detectedLane})" class="px-3.5 py-1.5 bg-white border border-amber-400 hover:bg-amber-100 text-amber-900 font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5">
-                                    <span>🔄</span> 改切換為【第 ${detectedLane} 道】選手
+                                <button type="button" onclick="switchOcrLane(${selectedLane})" class="px-3.5 py-1.5 ${targetLane === selectedLane ? 'bg-blue-600 text-white' : 'bg-white border border-amber-400 text-amber-900'} hover:opacity-90 active:scale-95 font-black text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5">
+                                    <span>${targetLane === selectedLane ? '✓' : '🔄'}</span> ${targetLane === selectedLane ? '目前採用' : '改選'}【第 ${selectedLane} 道】選手
                                 </button>
                             </div>
                         </div>
