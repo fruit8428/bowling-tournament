@@ -172,6 +172,7 @@ class OcrService {
         const height = meta.height;
 
         let detectedLane = options.selectedLane || 1;
+        let laneCropUrl = '';
         const scores = ['', '', '', ''];
         const turkeys = [0, 0, 0, 0];
         const flowers = [0, 0, 0, 0];
@@ -218,6 +219,13 @@ class OcrService {
                     binarized[j] = (r - Math.max(g, b) > 18) ? 0 : 255;
                 }
 
+                const laneSnippet = await sharp(imageBuffer)
+                    .extract({ left: cX, top: cY, width: cW, height: cH })
+                    .resize(160, null)
+                    .png()
+                    .toBuffer();
+                laneCropUrl = 'data:image/png;base64,' + laneSnippet.toString('base64');
+
                 const imgBuf = await sharp(binarized, { raw: { width: cW, height: cH, channels: 1 } })
                     .resize(320, null, { kernel: 'nearest' })
                     .extend({ top: 30, bottom: 30, left: 30, right: 30, background: '#ffffff' })
@@ -258,14 +266,23 @@ class OcrService {
         ];
         const sLeft = Math.floor(width * 0.82);
         const sWidth = Math.floor(width * 0.10);
+        const scoreCropUrls = ['', '', '', ''];
 
         for (let i = 0; i < configs.length; i++) {
             const cfg = configs[i];
             const sTop = Math.floor(height * cfg.topPct);
             const sHeight = Math.floor(height * cfg.hPct);
 
+            try {
+                const snip = await sharp(imageBuffer)
+                    .extract({ left: sLeft, top: sTop, width: sWidth, height: sHeight })
+                    .png()
+                    .toBuffer();
+                scoreCropUrls[i] = 'data:image/png;base64,' + snip.toString('base64');
+            } catch (err) {}
+
             let bestScore = '';
-            for (const th of [138, 120, 150]) {
+            for (const th of [138, 120, 155]) {
                 try {
                     const scoreBuf = await sharp(imageBuffer)
                         .extract({ left: sLeft, top: sTop, width: sWidth, height: sHeight })
@@ -296,6 +313,8 @@ class OcrService {
             scores,
             turkeys,
             flowers,
+            laneCropUrl,
+            scoreCropUrls,
             confidence: validCount >= 2 ? 0.95 : 0.70,
             message: `本機電腦視覺已辨識完成（辨識出 ${validCount}/4 位選手成績）`
         };
