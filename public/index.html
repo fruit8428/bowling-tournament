@@ -103,7 +103,7 @@
                     🔐
                 </div>
                 <h3 class="text-xl font-black text-slate-800 tracking-wide">記分員身份驗證</h3>
-                <p class="text-xs text-slate-500 font-medium">請輸入 4 位數記分員專屬授權密碼</p>
+                <p id="auth-modal-subtitle" class="text-xs text-slate-500 font-medium">請輸入 4 位數記分員專屬授權密碼</p>
             </div>
 
             <!-- 密碼輸入框 -->
@@ -183,11 +183,21 @@
 
             <div class="space-y-3.5 text-left">
                 
+                <!-- 角色模式切換：觀眾查榜 (純看) vs 現場記分員 (可改) -->
+                <div class="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs font-black">
+                    <button type="button" onclick="setQrTargetRole('spectator')" id="qr-tab-spectator" class="flex-1 py-2 rounded-xl transition-all bg-white text-slate-900 shadow-sm font-black flex items-center justify-center gap-1.5 cursor-pointer">
+                        <span>👀</span> 觀眾查榜 (純看不能改)
+                    </button>
+                    <button type="button" onclick="setQrTargetRole('scorekeeper')" id="qr-tab-scorekeeper" class="flex-1 py-2 rounded-xl transition-all text-slate-500 hover:text-slate-800 font-bold flex items-center justify-center gap-1.5 cursor-pointer">
+                        <span>✏️</span> 現場計分員 (可修改)
+                    </button>
+                </div>
+
                 <!-- 控制列：選擇球道 與 選擇連線 IP -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
                     
-                    <!-- 1. 選擇球道模式 -->
-                    <div>
+                    <!-- 1. 選擇球道模式 (計分員專用) -->
+                    <div id="qr-lane-config-box" class="hidden">
                         <label class="block text-[11px] font-black text-slate-600 mb-1">📍 記分員球道模式：</label>
                         <select id="qr-lane-select" onchange="onQrConfigChanged()" class="w-full bg-white border border-slate-300 rounded-xl p-2 text-xs font-black text-slate-800 focus:border-emerald-500 outline-none">
                             <option value="all">【全場通用】自選球道</option>
@@ -228,8 +238,8 @@
                         </div>
                     </div>
 
-                    <div class="text-[11px] text-slate-500 font-bold">
-                        💡 手機掃描後將自動完成授權，直接進入記分員頁面
+                    <div id="qr-role-tip" class="text-[11px] text-slate-500 font-bold">
+                        💡 適合投影於大螢幕或發送選手觀眾，手機掃碼即時查榜（無修改權限，安全可靠）
                     </div>
 
                 </div>
@@ -360,6 +370,109 @@
         </div>
     </div>
 
+    <!-- ✏️ 計分員快速修改選手成績彈跳視窗 (Quick Score Edit Modal) -->
+    <div id="quick-score-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+        <div class="bg-white border border-slate-200 rounded-3xl p-5 sm:p-7 max-w-md w-full shadow-2xl space-y-4 relative my-auto">
+            
+            <!-- 裝飾背景柔光 -->
+            <div class="absolute -top-16 -left-16 w-32 h-32 bg-blue-100 rounded-full blur-2xl pointer-events-none"></div>
+            <div class="absolute -bottom-16 -right-16 w-32 h-32 bg-emerald-100 rounded-full blur-2xl pointer-events-none"></div>
+
+            <!-- 標題列 -->
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3 relative z-10">
+                <div class="flex items-center gap-2.5">
+                    <span class="text-2xl p-1.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-200">✏️</span>
+                    <div class="text-left">
+                        <h3 class="text-lg font-black text-slate-900">計分員修改成績</h3>
+                        <p id="qsm-player-info" class="text-xs text-slate-500 font-bold">第 1 球道 • P1 周宜國</p>
+                    </div>
+                </div>
+                <button onclick="closeQuickScoreModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 font-black text-base flex items-center justify-center transition-colors cursor-pointer">✕</button>
+            </div>
+
+            <!-- 分數編輯區 (第 1、2、3 局) -->
+            <div class="space-y-2.5 relative z-10">
+                <!-- 第 1 局 -->
+                <div class="bg-slate-50 p-2.5 rounded-2xl border border-slate-200 flex items-center justify-between gap-2">
+                    <div class="text-xs font-black text-slate-700 w-16 shrink-0">第 1 局</div>
+                    <input type="number" id="qsm-g1" min="0" max="300" placeholder="-" oninput="calcQuickScorePreview()" class="w-20 text-center text-lg font-black py-1 px-2 bg-white border-2 border-slate-300 focus:border-blue-500 rounded-xl outline-none shadow-inner">
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button type="button" onclick="adjustQuickScore('g1', -10)" class="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-black active:scale-95 shadow-xs">-10</button>
+                        <button type="button" onclick="adjustQuickScore('g1', 10)" class="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-black active:scale-95 shadow-xs">+10</button>
+                        <button type="button" onclick="setQuickScoreDirect('g1', 300)" class="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-xs font-black active:scale-95">300</button>
+                        <button type="button" onclick="setQuickScoreDirect('g1', '')" class="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-xs font-black active:scale-95">清空</button>
+                    </div>
+                </div>
+
+                <!-- 第 2 局 -->
+                <div class="bg-slate-50 p-2.5 rounded-2xl border border-slate-200 flex items-center justify-between gap-2">
+                    <div class="text-xs font-black text-slate-700 w-16 shrink-0">第 2 局</div>
+                    <input type="number" id="qsm-g2" min="0" max="300" placeholder="-" oninput="calcQuickScorePreview()" class="w-20 text-center text-lg font-black py-1 px-2 bg-white border-2 border-slate-300 focus:border-blue-500 rounded-xl outline-none shadow-inner">
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button type="button" onclick="adjustQuickScore('g2', -10)" class="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-black active:scale-95 shadow-xs">-10</button>
+                        <button type="button" onclick="adjustQuickScore('g2', 10)" class="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-black active:scale-95 shadow-xs">+10</button>
+                        <button type="button" onclick="setQuickScoreDirect('g2', 300)" class="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-xs font-black active:scale-95">300</button>
+                        <button type="button" onclick="setQuickScoreDirect('g2', '')" class="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-xs font-black active:scale-95">清空</button>
+                    </div>
+                </div>
+
+                <!-- 第 3 局 -->
+                <div class="bg-slate-50 p-2.5 rounded-2xl border border-slate-200 flex items-center justify-between gap-2">
+                    <div class="text-xs font-black text-slate-700 w-16 shrink-0">第 3 局</div>
+                    <input type="number" id="qsm-g3" min="0" max="300" placeholder="-" oninput="calcQuickScorePreview()" class="w-20 text-center text-lg font-black py-1 px-2 bg-white border-2 border-slate-300 focus:border-blue-500 rounded-xl outline-none shadow-inner">
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button type="button" onclick="adjustQuickScore('g3', -10)" class="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-black active:scale-95 shadow-xs">-10</button>
+                        <button type="button" onclick="adjustQuickScore('g3', 10)" class="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-black active:scale-95 shadow-xs">+10</button>
+                        <button type="button" onclick="setQuickScoreDirect('g3', 300)" class="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-xs font-black active:scale-95">300</button>
+                        <button type="button" onclick="setQuickScoreDirect('g3', '')" class="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-xs font-black active:scale-95">清空</button>
+                    </div>
+                </div>
+
+                <!-- 特別獎項 (火雞 / 霸王花) -->
+                <div class="grid grid-cols-2 gap-2.5 pt-1">
+                    <div class="bg-amber-50/80 p-2.5 rounded-2xl border border-amber-200 flex items-center justify-between">
+                        <span class="text-xs font-black text-amber-900">🦃 火雞數：</span>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="adjustQuickAward('turkeys', -1)" class="w-7 h-7 bg-white border border-amber-300 rounded-lg font-black text-amber-900 shadow-xs hover:bg-amber-100 active:scale-90 flex items-center justify-center">-</button>
+                            <span id="qsm-turkeys" class="w-6 text-center font-black text-amber-900 text-sm">0</span>
+                            <button type="button" onclick="adjustQuickAward('turkeys', 1)" class="w-7 h-7 bg-amber-500 text-white rounded-lg font-black shadow-xs hover:bg-amber-600 active:scale-90 flex items-center justify-center">+</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-pink-50/80 p-2.5 rounded-2xl border border-pink-200 flex items-center justify-between">
+                        <span class="text-xs font-black text-pink-900">🌺 霸王花：</span>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="adjustQuickAward('flowers', -1)" class="w-7 h-7 bg-white border border-pink-300 rounded-lg font-black text-pink-900 shadow-xs hover:bg-pink-100 active:scale-90 flex items-center justify-center">-</button>
+                            <span id="qsm-flowers" class="w-6 text-center font-black text-pink-900 text-sm">0</span>
+                            <button type="button" onclick="adjustQuickAward('flowers', 1)" class="w-7 h-7 bg-pink-500 text-white rounded-lg font-black shadow-xs hover:bg-pink-600 active:scale-90 flex items-center justify-center">+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 即時總分即時預覽 -->
+                <div id="qsm-total-preview" class="bg-blue-50/80 border border-blue-200 rounded-2xl p-2.5 text-center text-xs font-black text-blue-900">
+                    原分: - • 女子加分: - • 總計: -
+                </div>
+            </div>
+
+            <!-- 動作按鈕 -->
+            <div class="space-y-2 pt-2 border-t border-slate-100 relative z-10">
+                <button type="button" onclick="saveQuickScoreModal()" class="w-full py-3 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-sm rounded-2xl shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                    <span>💾</span> 儲存成績並即時同步全場
+                </button>
+                <div class="flex items-center justify-between text-xs pt-1 px-1">
+                    <button type="button" onclick="jumpToScorekeeperFromModal()" class="text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer">
+                        📱 進入此道大按鍵記分頁
+                    </button>
+                    <button type="button" onclick="closeQuickScoreModal()" class="text-slate-400 hover:text-slate-600 font-bold cursor-pointer">
+                        取消返回
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
     <!-- 主應用容器 -->
     <div id="app" class="min-h-screen"></div>
 
@@ -395,6 +508,9 @@
         // 記分員身份認證狀態
         let isScorekeeperAuthenticated = false;
         let currentEnteredPin = '';
+        let authSuccessCallback = null;
+        let currentEditingTarget = null; // { lane: 1, pId: 1, gender: '男' }
+        let qrTargetRole = 'spectator'; // 'spectator' (觀眾純查榜) or 'scorekeeper' (計分員可修改)
 
         // 記分員端狀態
         let skSelectedLane = '1';
@@ -799,20 +915,26 @@
         // ==========================================
         // 記分員密碼驗證邏輯 (PIN Pad Auth)
         // ==========================================
-        function requestScorekeeperAccess() {
+        function requestScorekeeperAccess(customPrompt = null, onSuccessCallback = null) {
             if (isScorekeeperAuthenticated) {
-                navigateTo('scorekeeper');
+                if (onSuccessCallback) onSuccessCallback();
+                else navigateTo('scorekeeper');
             } else {
-                openAuthModal();
+                openAuthModal(customPrompt, onSuccessCallback);
             }
         }
 
-        function openAuthModal() {
+        function openAuthModal(customPrompt = null, onSuccessCallback = null) {
+            authSuccessCallback = onSuccessCallback || null;
             currentEnteredPin = '';
             const input = document.getElementById('auth-pin-input');
             if (input) {
                 input.value = '';
                 setTimeout(() => input.focus(), 150);
+            }
+            const subtitle = document.getElementById('auth-modal-subtitle');
+            if (subtitle) {
+                subtitle.innerText = customPrompt || '請輸入 4 位數記分員專屬授權密碼';
             }
             const errMsg = document.getElementById('auth-error-msg');
             if (errMsg) errMsg.innerText = '';
@@ -831,6 +953,7 @@
                 modal.style.display = 'none';
             }
             currentEnteredPin = '';
+            authSuccessCallback = null;
         }
 
         function handlePinInput(digit) {
@@ -919,9 +1042,17 @@
             if (isValid) {
                 isScorekeeperAuthenticated = true;
                 sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+                const cb = authSuccessCallback;
                 closeAuthModal();
-                navigateTo('scorekeeper');
-                showToast('🔓 記分員授權成功！歡迎使用');
+                if (cb) {
+                    cb();
+                } else if (currentView === 'dashboard') {
+                    renderCurrentView();
+                    showToast('🔓 記分員授權成功！已開啟修改分數權限', 'success');
+                } else {
+                    navigateTo('scorekeeper');
+                    showToast('🔓 記分員授權成功！歡迎使用', 'success');
+                }
             } else {
                 const box = document.getElementById('auth-box');
                 const errMsg = document.getElementById('auth-error-msg');
@@ -940,17 +1071,51 @@
         function logoutScorekeeper() {
             isScorekeeperAuthenticated = false;
             sessionStorage.removeItem(AUTH_STORAGE_KEY);
-            showToast('🔒 記分員已鎖定並安全登出');
-            navigateTo('home');
+            showToast('🔒 已安全登出，已切換回【一般人看榜模式】（只能看，不能改）', 'info');
+            if (currentView === 'scorekeeper' || currentView === 'admin') {
+                currentView = 'dashboard';
+            }
+            renderCurrentView();
         }
 
         // ==========================================
         // 手機 QR Code 相關功能 (升級即時連線中心)
         // ==========================================
+        function setQrTargetRole(role) {
+            qrTargetRole = role;
+            const tabSpec = document.getElementById('qr-tab-spectator');
+            const tabScore = document.getElementById('qr-tab-scorekeeper');
+            const laneBox = document.getElementById('qr-lane-config-box');
+            const badge = document.getElementById('qr-target-badge');
+            const tip = document.getElementById('qr-role-tip');
+
+            if (role === 'spectator') {
+                if (tabSpec) tabSpec.className = 'flex-1 py-2 rounded-xl transition-all bg-white text-slate-900 shadow-sm font-black flex items-center justify-center gap-1.5 cursor-pointer';
+                if (tabScore) tabScore.className = 'flex-1 py-2 rounded-xl transition-all text-slate-500 hover:text-slate-800 font-bold flex items-center justify-center gap-1.5 cursor-pointer';
+                if (laneBox) laneBox.classList.add('hidden');
+                if (badge) {
+                    badge.className = 'inline-block bg-blue-100 text-blue-900 border border-blue-300 font-black text-xs px-3 py-1 rounded-full shadow-sm';
+                    badge.innerText = '👀 觀眾/選手查榜 QR Code (純看不能改)';
+                }
+                if (tip) {
+                    tip.innerText = '💡 適合投影於大螢幕或發送選手觀眾，手機掃碼即時查榜（無修改權限，安全可靠）';
+                }
+            } else {
+                if (tabSpec) tabSpec.className = 'flex-1 py-2 rounded-xl transition-all text-slate-500 hover:text-slate-800 font-bold flex items-center justify-center gap-1.5 cursor-pointer';
+                if (tabScore) tabScore.className = 'flex-1 py-2 rounded-xl transition-all bg-emerald-600 text-white shadow-sm font-black flex items-center justify-center gap-1.5 cursor-pointer';
+                if (laneBox) laneBox.classList.remove('hidden');
+                if (badge) {
+                    badge.className = 'inline-block bg-emerald-100 text-emerald-900 border border-emerald-300 font-black text-xs px-3 py-1 rounded-full shadow-sm';
+                    badge.innerText = '✏️ 現場計分員專用 QR Code (含修改授權)';
+                }
+                if (tip) {
+                    tip.innerText = '💡 專供現場裁判與工作人員使用，掃描後自動完成授權並可修改球道成績';
+                }
+            }
+            updateQrModalCode();
+        }
+
         function getMobileQrUrl() {
-            const laneSelect = document.getElementById('qr-lane-select');
-            const targetLane = laneSelect ? laneSelect.value : 'all';
-            
             let origin = window.location.origin.includes('github.io')
                 ? (window.location.origin + window.location.pathname.replace(/\/$/, ''))
                 : `http://${detectedLocalIp}:${window.location.port || 3000}`;
@@ -960,6 +1125,12 @@
                 origin = `http://${ipSelect.value}:${window.location.port || 3000}`;
             }
 
+            if (qrTargetRole === 'spectator') {
+                return `${origin}/?room=${encodeURIComponent(cloudRoomId)}&view=dashboard`;
+            }
+
+            const laneSelect = document.getElementById('qr-lane-select');
+            const targetLane = laneSelect ? laneSelect.value : 'all';
             const pwd = SCOREKEEPER_PASSWORD || '2222';
             let url = `${origin}/?room=${encodeURIComponent(cloudRoomId)}&view=scorekeeper&pwd=${encodeURIComponent(pwd)}&auth=true`;
             if (targetLane && targetLane !== 'all') {
@@ -1136,7 +1307,17 @@
         // ==========================================
         function navigateTo(view) {
             if (view === 'scorekeeper' && !isScorekeeperAuthenticated) {
-                requestScorekeeperAccess();
+                openAuthModal('🔒 進入記分員端需輸入授權密碼：', () => {
+                    currentView = 'scorekeeper';
+                    renderCurrentView();
+                });
+                return;
+            }
+            if (view === 'admin' && !isScorekeeperAuthenticated) {
+                openAuthModal('🔒 進入賽事管理後台需輸入授權密碼：', () => {
+                    currentView = 'admin';
+                    renderCurrentView();
+                });
                 return;
             }
 
@@ -2319,7 +2500,7 @@
                                         ${EVENT_NAME} — 大會即時總表
                                     </h1>
                                 </div>
-                                <div class="flex flex-wrap items-center gap-3 mt-2 text-xs sm:text-sm text-slate-600 font-medium">
+                                <div class="flex flex-wrap items-center gap-2.5 mt-2 text-xs sm:text-sm text-slate-600 font-medium">
                                     <span class="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full font-black">
                                         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                                         即時雙向連線
@@ -2330,6 +2511,24 @@
                                     </span>
                                     <span>•</span>
                                     <span class="text-slate-500 font-bold">共 40 球道 / 160 位選手</span>
+                                    <span>•</span>
+                                    <!-- 角色權限狀態標籤 (計分員 vs 一般人) -->
+                                    ${isScorekeeperAuthenticated ? `
+                                        <span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-900 border border-emerald-400 px-3 py-1 rounded-full font-black text-xs shadow-xs">
+                                            <span class="w-2 h-2 rounded-full bg-emerald-600 animate-ping"></span>
+                                            <span>✏️</span> 計分員模式 (可修改分數)
+                                        </span>
+                                        <button onclick="logoutScorekeeper()" class="px-2.5 py-1 bg-slate-200 hover:bg-rose-100 text-slate-700 hover:text-rose-700 rounded-full text-xs font-bold transition-all cursor-pointer shadow-2xs" title="登出並切換回一般人看榜模式">
+                                            🔒 鎖定登出
+                                        </button>
+                                    ` : `
+                                        <span class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 border border-slate-300 px-3 py-1 rounded-full font-bold text-xs">
+                                            <span>👀</span> 一般人看榜模式 (純看不能改)
+                                        </span>
+                                        <button onclick="requestScorekeeperAccess('🔒 請輸入記分員授權密碼以開啟修改分數權限：')" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95">
+                                            🔑 登入計分員 (修改成績)
+                                        </button>
+                                    `}
                                 </div>
                             </div>
 
@@ -2371,6 +2570,11 @@
                                     <span>${isAutoScrolling ? '⏸ 停止滾動' : '▶ 大螢幕循環滾動'}</span>
                                 </button>
 
+                                <!-- 依附圖所需新增功能：比賽開始，清空分數歸零 -->
+                                <button onclick="handleStartTournamentReset()" class="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/25 border border-rose-500 transition-all cursor-pointer" title="比賽開始前將全場成績歸零，保留所有參賽名冊與球道配置">
+                                    <span>🔄</span> 比賽開始，清空分數歸零
+                                </button>
+
                                 <!-- 手機 QR Code -->
                                 <button onclick="openQrModal()" class="flex items-center gap-1 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black shadow-sm transition-all">
                                     <span>📱</span> QR Code
@@ -2393,8 +2597,23 @@
                         </div>
                     </div>
 
-                    <!-- 手機端超顯眼即時排名與獎項榜快捷橫幅 -->
-                    <div class="lg:hidden p-3 pb-0 bg-slate-100">
+                    <!-- 手機端快捷功能列 (包含比賽開始歸零與排名榜) -->
+                    <div class="lg:hidden p-3 pb-0 bg-slate-100 space-y-2">
+                        <!-- 比賽開始，清空分數歸零 (手機端快捷) -->
+                        <div class="flex items-center gap-2">
+                            <button onclick="handleStartTournamentReset()" class="flex-1 py-2.5 px-3 bg-rose-600 hover:bg-rose-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-sm flex items-center justify-center gap-1 cursor-pointer">
+                                <span>🔄</span> 比賽開始，清空分數歸零
+                            </button>
+                            ${isScorekeeperAuthenticated ? `
+                                <button onclick="logoutScorekeeper()" class="py-2.5 px-3 bg-slate-200 hover:bg-rose-100 text-slate-700 hover:text-rose-700 rounded-xl text-xs font-bold transition-all cursor-pointer">
+                                    🔒 鎖定
+                                </button>
+                            ` : `
+                                <button onclick="requestScorekeeperAccess('🔒 請輸入記分員授權密碼以開啟修改分數權限：')" class="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer">
+                                    🔑 登入計分員
+                                </button>
+                            `}
+                        </div>
                         <button onclick="navigateTo('leaderboard')" class="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 active:scale-98 text-white rounded-2xl text-sm font-black shadow-lg shadow-orange-500/25 border-2 border-amber-300 flex items-center justify-between transition-all cursor-pointer">
                             <div class="flex items-center gap-2.5">
                                 <span class="text-2xl p-1 bg-white/20 rounded-xl shadow-inner">🏆</span>
@@ -2604,18 +2823,21 @@
                                 <span class="text-[11px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-black border border-slate-300">P${player.id}</span>
                             </td>
                             <td class="p-2 align-middle">
-                                <div class="font-black text-slate-900 text-sm flex items-center gap-1">
+                                <div class="font-black text-slate-900 text-sm flex items-center gap-1 flex-wrap">
                                     ${player.name ? player.name : (player.nickname || '<span class="text-slate-300 font-normal italic text-xs">（留白）</span>')}
                                     ${hasName ? (isFemale ? '<span class="text-pink-600 text-xs">👩</span>' : '<span class="text-blue-600 text-xs">👨</span>') : ''}
                                     ${player.title ? `<span class="bg-amber-100 text-amber-800 px-1 py-0.2 rounded text-[10px] font-bold border border-amber-200">${player.title}</span>` : ''}
+                                    ${isScorekeeperAuthenticated && hasName ? `
+                                        <button onclick="openQuickScoreModal(${i}, ${player.id})" class="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white rounded text-[10px] font-black border border-blue-200 transition-all cursor-pointer shadow-2xs" title="計分員修改成績">✏️ 改分</button>
+                                    ` : ''}
                                 </div>
                                 <div class="text-[11px] text-slate-500 font-medium truncate max-w-[150px]">
                                     ${player.club || '未分配社團'}
                                 </div>
                             </td>
-                            <td class="p-2 text-center text-slate-800 text-base font-bold">${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}</td>
-                            <td class="p-2 text-center text-slate-800 text-base font-bold">${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}</td>
-                            <td class="p-2 text-center text-slate-800 text-base font-bold">${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}</td>
+                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 1)" title="計分員點擊可修改第 1 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}</td>
+                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 2)" title="計分員點擊可修改第 2 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}</td>
+                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 3)" title="計分員點擊可修改第 3 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}</td>
                             <td class="p-2 text-center font-black text-pink-700 text-sm bg-pink-50/50">
                                 ${bonus > 0 ? `+${bonus}` : '<span class="text-slate-300">-</span>'}
                             </td>
@@ -2650,7 +2872,14 @@
                                 ${hasName ? (player.club || '<span class="text-slate-400">-</span>') : '<span class="text-slate-300">-</span>'}
                             </td>
                             <td class="p-3 font-bold text-slate-900 align-middle">
-                                ${displayName}
+                                <div class="flex items-center gap-2">
+                                    <span>${displayName}</span>
+                                    ${isScorekeeperAuthenticated && hasName ? `
+                                        <button onclick="openQuickScoreModal(${i}, ${player.id})" class="px-2 py-0.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white rounded text-[11px] font-black border border-blue-200 transition-all cursor-pointer shadow-2xs inline-flex items-center gap-0.5 shrink-0" title="計分員修改此選手成績">
+                                            <span>✏️</span> 改分
+                                        </button>
+                                    ` : ''}
+                                </div>
                             </td>
                             <td class="p-3 text-center align-middle">
                                 ${titleBadge}
@@ -2664,21 +2893,30 @@
                             <td class="p-3 text-center align-middle">
                                 ${identityBadge}
                             </td>
-                            <td class="p-3 text-center text-slate-800 text-lg font-bold">${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}</td>
-                            <td class="p-3 text-center text-slate-800 text-lg font-bold">${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}</td>
-                            <td class="p-3 text-center text-slate-800 text-lg font-bold">${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}</td>
+                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 1)" title="計分員點擊可修改第 1 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
+                                ${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}
+                                ${isScorekeeperAuthenticated ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
+                            </td>
+                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 2)" title="計分員點擊可修改第 2 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
+                                ${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}
+                                ${isScorekeeperAuthenticated ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
+                            </td>
+                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 3)" title="計分員點擊可修改第 3 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
+                                ${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}
+                                ${isScorekeeperAuthenticated ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
+                            </td>
                             <td class="p-3 text-center font-black text-pink-700 text-base bg-pink-50/50">
                                 ${bonus > 0 ? `+${bonus}` : '<span class="text-slate-300">-</span>'}
                             </td>
                             <td class="p-3 text-center font-black text-2xl text-blue-700 bg-blue-50/50">
                                 ${total !== null ? total : '<span class="text-slate-300">-</span>'}
                             </td>
-                            <td class="p-3 text-center align-middle">
+                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id})" title="計分員點擊可修改特別獎項" class="p-3 text-center align-middle cursor-pointer hover:bg-amber-100 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center align-middle"`}>
                                 ${hasName && player.turkeys > 0 
                                     ? `<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-black px-2.5 py-1 rounded-full border border-amber-300 text-xs">🦃 x ${player.turkeys}</span>` 
                                     : '<span class="text-slate-300">-</span>'}
                             </td>
-                            <td class="p-3 text-center align-middle">
+                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id})" title="計分員點擊可修改特別獎項" class="p-3 text-center align-middle cursor-pointer hover:bg-pink-100 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center align-middle"`}>
                                 ${hasName && player.flowers > 0 
                                     ? `<span class="inline-flex items-center gap-1 bg-pink-100 text-pink-800 font-black px-2.5 py-1 rounded-full border border-pink-300 text-xs">🌺 x ${player.flowers}</span>` 
                                     : '<span class="text-slate-300">-</span>'}
@@ -3798,6 +4036,251 @@
             showBroadcast(msg, 8000);
             input.value = '';
             showToast('全場廣播發送成功！', 'success');
+        }
+
+
+        // ==========================================
+        // 比賽開始清空歸零 & 計分員快速修改成績核心邏輯
+        // ==========================================
+        function handleStartTournamentReset() {
+            if (!isScorekeeperAuthenticated) {
+                openAuthModal('⚠️ 此操作為計分員/裁判專用，請先輸入授權密碼以執行【比賽開始，清空分數歸零】：', () => {
+                    promptTournamentResetConfirm();
+                });
+                return;
+            }
+            promptTournamentResetConfirm();
+        }
+
+        async function promptTournamentResetConfirm() {
+            const isConfirmed = confirm(
+                '⚠️【保齡球比賽開始確認】\n\n' +
+                '確定要將全場 40 球道 160 位選手的分數全部清空歸零嗎？\n\n' +
+                '✅ 選手姓名、所屬社團、職稱、社名與球道編排將會完整保留。\n' +
+                '❌ 全場所有選手之第 1~3 局分數、火雞數與霸王花將全部重置為 0。\n\n' +
+                '確定正式開始比賽？'
+            );
+            if (!isConfirmed) return;
+
+            // 清空所有分數與獎項
+            for (let i = 1; i <= TOTAL_LANES; i++) {
+                if (lanesData[i]) {
+                    lanesData[i].forEach(p => {
+                        p.g1 = ''; p.g2 = ''; p.g3 = '';
+                        p.turkeys = 0; p.flowers = 0;
+                    });
+                }
+            }
+            saveToLocalStorage();
+            renderCurrentView();
+
+            // 1. 同步至本地後端
+            if (socket && socket.connected) {
+                try {
+                    const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
+                    await fetch(`${apiBase}/api/reset`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode: 'clear_scores' })
+                    });
+                } catch (e) {}
+            }
+
+            // 2. 廣播至雲端 MQTT (全場大螢幕與記分員手機同步歸零)
+            broadcastCloudEvent('bulk_updated', {
+                data: lanesData,
+                message: '🎳 比賽正式開始！全場 40 球道選手分數已全部歸零。'
+            });
+
+            showToast('🎉 比賽正式開始！全場分數已清空歸零，選手名單已保留。', 'success');
+        }
+
+        function onScoreCellClickRestricted(lane, pId) {
+            if (!isScorekeeperAuthenticated) {
+                showToast('🔒 目前為一般人看榜模式（只能看，不能改）。若為計分員請點擊上方登入。', 'info');
+            }
+        }
+
+        // 計分員快速改分彈跳視窗核心函式
+        function openQuickScoreModal(lane, pId, activeGame = 1) {
+            if (!isScorekeeperAuthenticated) {
+                openAuthModal('🔒 目前為瀏覽模式（一般人只能看，不能改）。若為計分員請輸入授權密碼以修改成績：', () => {
+                    openQuickScoreModal(lane, pId, activeGame);
+                });
+                return;
+            }
+
+            const player = lanesData[lane]?.find(p => p.id === pId);
+            if (!player) return;
+
+            currentEditingTarget = { lane, pId, player };
+
+            const infoElem = document.getElementById('qsm-player-info');
+            if (infoElem) {
+                const pName = player.name || player.nickname || `選手 ${pId}`;
+                const pClub = player.club || '未分配社團';
+                const pGender = player.gender || '男';
+                const pIdentity = player.identity || '社友';
+                infoElem.innerText = `第 ${lane} 球道 • P${player.id} ${pName} (${pClub} / ${pGender} / ${pIdentity})`;
+            }
+
+            const g1Input = document.getElementById('qsm-g1');
+            const g2Input = document.getElementById('qsm-g2');
+            const g3Input = document.getElementById('qsm-g3');
+            const turkeysElem = document.getElementById('qsm-turkeys');
+            const flowersElem = document.getElementById('qsm-flowers');
+
+            if (g1Input) g1Input.value = player.g1 !== null && player.g1 !== undefined ? player.g1 : '';
+            if (g2Input) g2Input.value = player.g2 !== null && player.g2 !== undefined ? player.g2 : '';
+            if (g3Input) g3Input.value = player.g3 !== null && player.g3 !== undefined ? player.g3 : '';
+            if (turkeysElem) turkeysElem.innerText = player.turkeys || 0;
+            if (flowersElem) flowersElem.innerText = player.flowers || 0;
+
+            calcQuickScorePreview();
+
+            const modal = document.getElementById('quick-score-modal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.style.display = 'flex';
+            }
+
+            setTimeout(() => {
+                const targetInput = document.getElementById(`qsm-g${activeGame}`) || g1Input;
+                if (targetInput) {
+                    targetInput.focus();
+                    targetInput.select();
+                }
+            }, 150);
+        }
+
+        function closeQuickScoreModal() {
+            const modal = document.getElementById('quick-score-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+            }
+            currentEditingTarget = null;
+        }
+
+        function adjustQuickScore(gameKey, diff) {
+            const input = document.getElementById(`qsm-${gameKey}`);
+            if (!input) return;
+            let current = input.value === '' ? 0 : parseInt(input.value, 10);
+            if (isNaN(current)) current = 0;
+            let next = Math.max(0, Math.min(300, current + diff));
+            input.value = next;
+            calcQuickScorePreview();
+        }
+
+        function setQuickScoreDirect(gameKey, val) {
+            const input = document.getElementById(`qsm-${gameKey}`);
+            if (!input) return;
+            input.value = val;
+            calcQuickScorePreview();
+        }
+
+        function adjustQuickAward(type, diff) {
+            const elem = document.getElementById(`qsm-${type}`);
+            if (!elem) return;
+            let current = parseInt(elem.innerText, 10) || 0;
+            let next = Math.max(0, current + diff);
+            elem.innerText = next;
+        }
+
+        function calcQuickScorePreview() {
+            if (!currentEditingTarget || !currentEditingTarget.player) return;
+            const player = currentEditingTarget.player;
+            const isFemale = player.gender === '女';
+
+            const g1Val = document.getElementById('qsm-g1')?.value;
+            const g2Val = document.getElementById('qsm-g2')?.value;
+            const g3Val = document.getElementById('qsm-g3')?.value;
+
+            const s1 = g1Val !== '' && g1Val !== null && !isNaN(parseInt(g1Val, 10)) ? parseInt(g1Val, 10) : null;
+            const s2 = g2Val !== '' && g2Val !== null && !isNaN(parseInt(g2Val, 10)) ? parseInt(g2Val, 10) : null;
+            const s3 = g3Val !== '' && g3Val !== null && !isNaN(parseInt(g3Val, 10)) ? parseInt(g3Val, 10) : null;
+
+            const hasPlayed = s1 !== null || s2 !== null || s3 !== null;
+            const scratch = (s1 || 0) + (s2 || 0) + (s3 || 0);
+            const bonus = (isFemale && hasPlayed) ? FEMALE_BONUS : 0;
+            const total = hasPlayed ? scratch + bonus : null;
+
+            const previewElem = document.getElementById('qsm-total-preview');
+            if (previewElem) {
+                if (!hasPlayed) {
+                    previewElem.innerHTML = `<span class="text-slate-500">原分: - • 女子加分: ${isFemale ? `+${FEMALE_BONUS}` : '0'} • 總計: -</span>`;
+                } else {
+                    previewElem.innerHTML = `
+                        <span>原分: <b>${scratch}</b></span>
+                        <span class="mx-1 text-slate-400">+</span>
+                        <span class="text-pink-600">女子加分: <b>+${bonus}</b></span>
+                        <span class="mx-1 text-slate-400">=</span>
+                        <span class="text-blue-700 text-sm">預計總分: <b>${total}</b></span>
+                    `;
+                }
+            }
+        }
+
+        async function saveQuickScoreModal() {
+            if (!currentEditingTarget || !currentEditingTarget.player) return;
+            const { lane, pId } = currentEditingTarget;
+            const player = lanesData[lane]?.find(p => p.id === pId);
+            if (!player) return;
+
+            const parseVal = (val) => {
+                if (val === '' || val === null || val === undefined) return '';
+                const num = parseInt(val, 10);
+                if (isNaN(num)) return '';
+                return Math.max(0, Math.min(300, num));
+            };
+
+            player.g1 = parseVal(document.getElementById('qsm-g1')?.value);
+            player.g2 = parseVal(document.getElementById('qsm-g2')?.value);
+            player.g3 = parseVal(document.getElementById('qsm-g3')?.value);
+            player.turkeys = parseInt(document.getElementById('qsm-turkeys')?.innerText, 10) || 0;
+            player.flowers = parseInt(document.getElementById('qsm-flowers')?.innerText, 10) || 0;
+
+            saveToLocalStorage();
+
+            // 1. 本地後端 Socket.IO / REST 存檔
+            if (socket && socket.connected) {
+                socket.emit('lane:save_scores', {
+                    lane,
+                    players: lanesData[lane]
+                });
+            } else {
+                try {
+                    const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
+                    fetch(`${apiBase}/api/lane/batch-update`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lane,
+                            players: lanesData[lane]
+                        })
+                    }).catch(() => {});
+                } catch (e) {}
+            }
+
+            // 2. 雲端跨網即時廣播
+            broadcastCloudEvent('lane_updated', {
+                lane: parseInt(lane, 10),
+                players: lanesData[lane]
+            });
+
+            closeQuickScoreModal();
+            renderDashboardTable(lane);
+
+            const pName = player.name || player.nickname || `P${pId}`;
+            showToast(`✅ 第 ${lane} 道 ${pName} 成績修改成功並已即時同步全場！`, 'success');
+        }
+
+        function jumpToScorekeeperFromModal() {
+            if (!currentEditingTarget) return;
+            const targetLane = currentEditingTarget.lane;
+            closeQuickScoreModal();
+            skSelectedLane = String(targetLane);
+            navigateTo('scorekeeper');
         }
 
         async function clearOnlyScores() {
