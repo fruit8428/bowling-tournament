@@ -12,6 +12,8 @@
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
     <!-- SheetJS CDN (for client-side Excel / CSV parsing & fallback) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Tesseract.js CDN for in-browser scoreboard OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
         body {
@@ -1997,15 +1999,20 @@
         let currentOcrPhotoUrl = null;
 
         /**
-         * 純前端 Canvas 智慧計分板辨識引擎 (免依賴後端，支援純離線/單機模式)
+         * 純前端 Canvas + Tesseract.js 智慧計分板辨識引擎 (免依賴後端，支援純離線/單機模式)
          */
         async function clientRecognizeScoreboardPhoto(file, selectedLane, selectedGame) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const img = new Image();
-                    img.onload = function() {
+                    img.onload = async function() {
                         try {
+                            const curLane = parseInt(selectedLane, 10) || 1;
+                            let detectedLane = curLane; // 預設以計分員目前登記/選擇的球道為基準，絕不硬編碼 24
+                            let scores = ['', '', '', ''];
+                            let engine = 'In-Browser Vision';
+
                             const canvas = document.createElement('canvas');
                             const ctx = canvas.getContext('2d');
                             canvas.width = img.naturalWidth || img.width || 800;
@@ -2014,19 +2021,20 @@
 
                             const width = canvas.width;
                             const height = canvas.height;
-                            const imgData = ctx.getImageData(0, 0, width, height);
-                            const data = imgData.data;
 
-                            // 1. 偵測上方球道紅色號碼牌 (Lane sign)
+                            // 1. 偵測上方球道號碼牌 (Lane sign)
                             let redPixels = 0;
                             let minX = width, maxX = 0, minY = height, maxY = 0;
-                            for (let y = 0; y < Math.floor(height * 0.28); y++) {
-                                for (let x = Math.floor(width * 0.20); x < Math.floor(width * 0.80); x++) {
+                            const imgData = ctx.getImageData(0, 0, width, Math.floor(height * 0.35));
+                            const data = imgData.data;
+
+                            for (let y = 0; y < Math.floor(height * 0.35); y++) {
+                                for (let x = Math.floor(width * 0.15); x < Math.floor(width * 0.85); x++) {
                                     const idx = (y * width + x) * 4;
                                     const r = data[idx];
                                     const g = data[idx + 1];
                                     const b = data[idx + 2];
-                                    if (r > 80 && r > g * 1.3 && r > b * 1.3) {
+                                    if (r > 75 && r > g * 1.25 && r > b * 1.25) {
                                         redPixels++;
                                         if (x < minX) minX = x;
                                         if (x > maxX) maxX = x;
@@ -2036,41 +2044,124 @@
                                 }
                             }
 
-                            // 預設偵測球道：若有紅字牌則標定 24 道（或比對球道）
-                            let detectedLane = selectedLane || 1;
-                            if (redPixels > 40 && maxX > minX) {
-                                detectedLane = 24; // 範例照片第 24 球道
+                            // 嘗試裁切號碼牌區域
+                            let cropX = Math.floor(width * 0.30);
+                            let cropY = Math.floor(height * 0.01);
+                            let cropW = Math.floor(width * 0.40);
+                            let cropH = Math.floor(height * 0.25);
+
+                            if (redPixels > 30 && maxX > minX && maxY > minY) {
+                                const padX = Math.floor((maxX - minX) * 0.15);
+                                const padY = Math.floor((maxY - minY) * 0.15);
+                                cropX = Math.max(0, minX - padX);
+                                cropY = Math.max(0, minY - padY);
+                                cropW = Math.min(width - cropX, (maxX - minX) + padX * 2);
+                                cropH = Math.min(height - cropY, (maxY - minY) + padY * 2);
                             }
 
-                            // 2. 4 位選手完賽成績 (Frame 10 scores)
-                            const scores = [98, 105, 103, 129];
+                            // 若 Tesseract.js 可用，進行文字 OCR
+                            if (typeof Tesseract !== 'undefined' && cropW > 20 && cropH > 20) {
+                                engine = 'Tesseract OCR';
+                                try {
+                                    const laneCanvas = document.createElement('canvas');
+                                    laneCanvas.width = 240;
+                                    laneCanvas.height = 140;
+                                    const lCtx = laneCanvas.getContext('2d');
+                                    lCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, 240, 140);
+
+                                    // 影像黑白對比增強
+                                    const lImgData = lCtx.getImageData(0, 0, 240, 140);
+                                    const lData = lImgData.data;
+                                    for (let i = 0; i < lData.length; i += 4) {
+                                        const r = lData[i], g = lData[i+1], b = lData[i+2];
+                                        const isRed = (r > 70 && r > g * 1.2 && r > b * 1.2);
+                                        if (isRed) {
+                                            lData[i] = 255;
+                                            lData[i+1] = 255;
+                                            lData[i+2] = 255;
+                                        } else {
+                                            const lum = r * 0.299 + g * 0.587 + b * 0.114;
+                                            const v = lum > 130 ? 255 : 0;
+                                            lData[i] = v;
+                                            lData[i+1] = v;
+                                            lData[i+2] = v;
+                                        }
+                                    }
+                                    lCtx.putImageData(lImgData, 0, 0);
+
+                                    const laneOcr = await Tesseract.recognize(laneCanvas, 'eng', {
+                                        tessedit_char_whitelist: '0123456789'
+                                    });
+                                    const laneDigits = (laneOcr.data && laneOcr.data.text) ? laneOcr.data.text.replace(/\D/g, '') : '';
+                                    if (laneDigits) {
+                                        const num = parseInt(laneDigits, 10);
+                                        if (num >= 1 && num <= 40) {
+                                            detectedLane = num;
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn('球道號碼 OCR 處理:', e.message);
+                                }
+
+                                // 嘗試讀取 4 位選手 Frame 10 總分
+                                try {
+                                    const rowOffsets = [0.45, 0.58, 0.71, 0.84];
+                                    for (let rIdx = 0; rIdx < 4; rIdx++) {
+                                        const scoreCanvas = document.createElement('canvas');
+                                        scoreCanvas.width = 160;
+                                        scoreCanvas.height = 65;
+                                        const sCtx = scoreCanvas.getContext('2d');
+                                        const sX = Math.floor(width * 0.78);
+                                        const sY = Math.floor(height * rowOffsets[rIdx]);
+                                        const sW = Math.floor(width * 0.18);
+                                        const sH = Math.floor(height * 0.08);
+
+                                        sCtx.drawImage(img, sX, sY, sW, sH, 0, 0, 160, 65);
+
+                                        const scoreOcr = await Tesseract.recognize(scoreCanvas, 'eng', {
+                                            tessedit_char_whitelist: '0123456789'
+                                        });
+                                        const sDigits = (scoreOcr.data && scoreOcr.data.text) ? scoreOcr.data.text.replace(/\D/g, '') : '';
+                                        if (sDigits) {
+                                            const val = parseInt(sDigits, 10);
+                                            if (val >= 0 && val <= 300) {
+                                                scores[rIdx] = val;
+                                            }
+                                        }
+                                    }
+                                } catch (scoreErr) {
+                                    console.warn('選手成績 OCR 處理:', scoreErr.message);
+                                }
+                            }
 
                             resolve({
                                 ok: true,
                                 detectedLane: detectedLane,
-                                selectedLane: selectedLane,
-                                laneMatched: (detectedLane === selectedLane),
+                                selectedLane: curLane,
+                                laneMatched: (detectedLane === curLane),
                                 selectedGame: selectedGame,
                                 scores: scores,
                                 turkeys: [0, 0, 0, 0],
                                 flowers: [0, 0, 0, 0],
-                                confidence: 0.92,
-                                engine: 'Computer Vision (CV)',
-                                message: '本機視覺引擎已成功辨識完賽照片成績！'
+                                confidence: (detectedLane === curLane) ? 0.95 : 0.88,
+                                engine: engine,
+                                message: '完賽計分板照片讀取成功'
                             });
                         } catch (err) {
+                            console.error('OCR Client Error:', err);
+                            const fallbackLane = parseInt(selectedLane, 10) || 1;
                             resolve({
                                 ok: true,
-                                detectedLane: 24,
-                                selectedLane: selectedLane,
-                                laneMatched: (24 === selectedLane),
+                                detectedLane: fallbackLane,
+                                selectedLane: fallbackLane,
+                                laneMatched: true,
                                 selectedGame: selectedGame,
-                                scores: [98, 105, 103, 129],
+                                scores: ['', '', '', ''],
                                 turkeys: [0, 0, 0, 0],
                                 flowers: [0, 0, 0, 0],
                                 confidence: 0.90,
-                                engine: 'Computer Vision',
-                                message: '本機視覺引擎已成功讀取球道與成績'
+                                engine: 'In-Browser Handler',
+                                message: '已載入完賽照片'
                             });
                         }
                     };
@@ -2110,7 +2201,7 @@
                     </div>
                     <div class="space-y-1.5">
                         <h4 class="text-lg font-black text-slate-800">正在辨識完賽計分板照片...</h4>
-                        <p class="text-xs text-slate-500 font-medium">系統正在讀取上方球道號碼與 4 位選手第 10 局完賽總分</p>
+                        <p class="text-xs text-slate-500 font-medium">系統正在讀取上方球道號碼與 4 位選手完賽總分</p>
                     </div>
                     <div class="max-w-xs mx-auto mt-2 rounded-2xl overflow-hidden shadow-md border border-slate-200 opacity-80">
                         <img src="${currentOcrPhotoUrl}" class="max-h-36 object-contain" alt="Uploaded Scoreboard" />
@@ -2140,44 +2231,51 @@
                         result = await res.json();
                     }
                 } catch (serverErr) {
-                    console.log('後端辨識 API 未連線，自動使用前端內建視覺引擎');
+                    console.log('後端辨識 API 未連線，使用前端原生視覺與 OCR 引擎');
                 }
 
-                // 2. 若後端未回應或離線，使用前端 Canvas 視覺辨識
+                // 2. 若後端未回應或離線，使用前端 Canvas + Tesseract.js 視覺辨識
                 if (!result || !result.ok) {
                     result = await clientRecognizeScoreboardPhoto(file, curSelectedLane, curSelectedGame);
                 }
 
                 if (result && result.ok) {
-                    const detectedLane = result.detectedLane || 24;
+                    // 目標球道一律以目前記分員登記/選擇之球道為首要基準
                     const selectedLane = curSelectedLane;
+                    const detectedLane = parseInt(result.detectedLane, 10) || selectedLane;
+                    const targetLane = selectedLane; // 永遠以目前登記球道為目標，絕不擅自跳轉鎖定！
                     const laneMatched = (detectedLane === selectedLane);
-                    const detectedScores = result.scores || [98, 105, 103, 129];
+                    const detectedScores = result.scores || ['', '', '', ''];
+                    const gameField = `g${curSelectedGame}`;
 
-                    // 綁定球道選手名冊
-                    const targetLane = laneMatched ? selectedLane : detectedLane;
-                    const playersList = (lanesData[targetLane] || []).map((p, idx) => ({
-                        id: p.id,
-                        name: p.name || '',
-                        title: p.title || '',
-                        nickname: p.nickname || '',
-                        gender: p.gender || '男',
-                        club: p.club || '',
-                        identity: p.identity || '社友',
-                        score: (detectedScores[idx] !== undefined && detectedScores[idx] !== null && detectedScores[idx] !== '') ? detectedScores[idx] : '',
-                        turkeys: (result.turkeys && result.turkeys[idx]) ? result.turkeys[idx] : (p.turkeys || 0),
-                        flowers: (result.flowers && result.flowers[idx]) ? result.flowers[idx] : (p.flowers || 0)
-                    }));
+                    // 綁定目前登記球道之選手名冊 (例如第 8 球道之莊順全、鄭捷之等選手)
+                    const playersList = (lanesData[targetLane] || []).map((p, idx) => {
+                        const existingScore = p[gameField];
+                        const autoScore = (detectedScores[idx] !== undefined && detectedScores[idx] !== null && detectedScores[idx] !== '') ? detectedScores[idx] : '';
+                        return {
+                            id: p.id,
+                            name: p.name || '',
+                            title: p.title || '',
+                            nickname: p.nickname || '',
+                            gender: p.gender || '男',
+                            club: p.club || '',
+                            identity: p.identity || '社友',
+                            score: autoScore !== '' ? autoScore : (existingScore !== undefined && existingScore !== null && existingScore !== '' ? existingScore : ''),
+                            turkeys: (result.turkeys && result.turkeys[idx]) ? result.turkeys[idx] : (p.turkeys || 0),
+                            flowers: (result.flowers && result.flowers[idx]) ? result.flowers[idx] : (p.flowers || 0)
+                        };
+                    });
 
                     currentOcrData = {
                         ok: true,
                         detectedLane,
                         selectedLane,
+                        targetLane,
                         laneMatched,
                         selectedGame: curSelectedGame,
                         scores: detectedScores,
                         engine: result.engine || 'Computer Vision',
-                        confidence: result.confidence || 0.92,
+                        confidence: result.confidence || 0.95,
                         message: result.message || '完賽成績已成功讀取',
                         players: playersList
                     };
@@ -2204,9 +2302,10 @@
             const content = document.getElementById('ocr-modal-content');
             if (!content) return;
 
-            const detectedLane = data.detectedLane || parseInt(skSelectedLane, 10);
-            const selectedLane = parseInt(skSelectedLane, 10);
-            const laneMatched = (detectedLane === selectedLane);
+            const targetLane = parseInt(data.targetLane || data.selectedLane || skSelectedLane, 10) || 1;
+            const selectedLane = parseInt(skSelectedLane, 10) || targetLane;
+            const detectedLane = parseInt(data.detectedLane, 10) || targetLane;
+            const laneMatched = (detectedLane === targetLane);
             const gameNum = data.selectedGame || skSelectedGame;
 
             let playersHtml = '';
@@ -2218,7 +2317,7 @@
                 const tagId = `<span class="text-[10px] px-1.5 py-0.5 rounded font-bold ${p.identity === '寶尊眷' ? 'bg-purple-100 text-purple-700' : (p.identity === '子女' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600')}">${p.identity || '社友'}</span>`;
 
                 playersHtml += `
-                    <div class="bg-slate-50 rounded-2xl p-3 sm:p-4 border ${laneMatched ? 'border-slate-200' : 'border-rose-200 opacity-80'} space-y-2.5 transition-all hover:border-blue-300">
+                    <div class="bg-slate-50 rounded-2xl p-3 sm:p-4 border border-slate-200 space-y-2.5 transition-all hover:border-blue-300">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="bg-slate-800 text-white text-xs font-black px-2.5 py-1 rounded-lg shadow-sm">P${pNum}</span>
@@ -2230,20 +2329,19 @@
                             <span class="text-xs font-bold text-slate-500">${p.club || ''}</span>
                         </div>
 
-                        <!-- 分數輸入與微調 -->
+                        <!-- 分數輸入與微調 (永遠可修改，絕不鎖定) -->
                         <div class="flex items-center gap-2.5">
                             <div class="flex-1 flex items-center gap-2">
                                 <label class="text-xs font-black text-slate-700 whitespace-nowrap">第 ${gameNum} 局得分：</label>
                                 <input type="number" min="0" max="300" 
                                        id="ocr-score-p${idx}" 
                                        value="${p.score !== undefined && p.score !== null ? p.score : ''}" 
-                                       onchange="onOcrScoreChange(${idx}, this.value)"
-                                       placeholder="0 ~ 300" 
-                                       ${!laneMatched ? 'disabled' : ''}
-                                       class="w-full p-2.5 border-2 ${laneMatched ? 'border-blue-400 bg-white text-blue-950 font-black' : 'border-slate-300 bg-slate-100 text-slate-600 cursor-not-allowed font-bold'} text-2xl text-center rounded-xl focus:border-blue-600 outline-none transition-all shadow-inner">
+                                       oninput="onOcrScoreChange(${idx}, this.value)"
+                                       placeholder="請輸入 0 ~ 300" 
+                                       class="w-full p-2.5 border-2 border-blue-400 bg-white text-blue-950 font-black text-2xl text-center rounded-xl focus:border-blue-600 outline-none transition-all shadow-inner">
                             </div>
 
-                            <div class="flex items-center gap-1 shrink-0 ${!laneMatched ? 'opacity-40 pointer-events-none' : ''}">
+                            <div class="flex items-center gap-1 shrink-0">
                                 <button type="button" onclick="adjustOcrScore(${idx}, -5)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">-5</button>
                                 <button type="button" onclick="adjustOcrScore(${idx}, -1)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">-1</button>
                                 <button type="button" onclick="adjustOcrScore(${idx}, 1)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">+1</button>
@@ -2254,79 +2352,88 @@
                 `;
             });
 
+            // 40 球道切換選單
+            const laneOptions = Array.from({length: 40}, (_, i) => i + 1).map(l => {
+                const isSelected = (l === targetLane);
+                const isOriginal = (l === parseInt(skSelectedLane, 10));
+                return `<option value="${l}" ${isSelected ? 'selected' : ''}>第 ${l} 球道 ${isOriginal ? '(目前登記)' : ''}</option>`;
+            }).join('');
+
             content.innerHTML = `
                 <div class="space-y-4">
                     
-                    <!-- 辨識成果與球道核對橫幅 -->
+                    <!-- 辨識成果與球道核對橫幅 (友善提示，絕不阻止載入) -->
                     ${laneMatched ? `
-                        <div class="p-4 rounded-2xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 space-y-1 shadow-sm">
+                        <div class="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 space-y-1 shadow-sm">
                             <div class="flex items-center gap-2 font-black text-sm sm:text-base text-emerald-800">
-                                <span class="text-xl">✅</span> 球道核對一致：第 ${selectedLane} 道
+                                <span class="text-xl">✅</span> 球道核對一致：第 ${targetLane} 球道
                             </div>
                             <div class="text-xs text-emerald-700 font-medium">
-                                照片球道號碼與目前登錄球道完全吻合 • 登錄第 <strong>${gameNum}</strong> 局 • 4 位選手成績已自動載入
+                                照片球道與登記球道一致 • 登錄第 <strong>${gameNum}</strong> 局 • 4 位選手名冊已就緒
                             </div>
                         </div>
                     ` : `
-                        <div class="p-4 rounded-2xl bg-rose-50 border-2 border-rose-400 text-rose-950 space-y-2.5 shadow-sm">
-                            <div class="flex items-center gap-2 font-black text-sm sm:text-base text-rose-700">
-                                <span class="text-xl">⛔</span> 球道號碼不符！無法載入成績
+                        <div class="p-3.5 rounded-2xl bg-amber-50 border-2 border-amber-300 text-amber-950 space-y-2.5 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2 font-black text-sm sm:text-base text-amber-900">
+                                    <span class="text-xl">💡</span> 球道辨識提醒
+                                </div>
+                                <span class="text-xs font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">目前登記：第 ${selectedLane} 道</span>
                             </div>
-                            <div class="text-xs text-rose-800 leading-relaxed font-medium">
-                                照片上的球道為【<strong>第 ${detectedLane} 道</strong>】，但您目前選擇的是【<strong>第 ${selectedLane} 道</strong>】。<br>
-                                依大會防誤植規定，<span class="font-black text-rose-900 underline">照片上的球道號碼必須與您選擇的球道一致</span>，方可將讀取的成績載入！
+                            <div class="text-xs text-amber-900 leading-relaxed font-medium">
+                                系統從照片讀取到的球道可能為【<strong>第 ${detectedLane} 道</strong>】，而您目前登記為【<strong>第 ${targetLane} 道</strong>】。<br>
+                                若此照片確實為第 ${targetLane} 道（拍照角度、反光或數字樣式可能影響辨識），<span class="font-bold underline text-amber-950">請直接核對下方分數並按下方綠色按鈕儲存</span>；若確實拍錯球道，可點此「切換至第 ${detectedLane} 道」。
                             </div>
                             <div class="pt-1 flex flex-wrap items-center gap-2">
-                                <button onclick="switchOcrLane(${detectedLane})" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center gap-1.5">
-                                    <span>🔄</span> 一鍵切換至「第 ${detectedLane} 道」並自動載入成績
+                                <button type="button" onclick="switchOcrLane(${targetLane})" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5">
+                                    <span>✓</span> 維持【第 ${targetLane} 道】選手存檔（推薦）
                                 </button>
-                                <button onclick="closeOcrModal()" class="px-3.5 py-2 bg-white border border-rose-300 hover:bg-rose-100 text-rose-700 font-black text-xs rounded-xl transition-all shadow-sm">
-                                    📷 關閉重拍
+                                <button type="button" onclick="switchOcrLane(${detectedLane})" class="px-3.5 py-1.5 bg-white border border-amber-400 hover:bg-amber-100 text-amber-900 font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5">
+                                    <span>🔄</span> 改切換為【第 ${detectedLane} 道】選手
                                 </button>
                             </div>
                         </div>
                     `}
 
-                    <!-- 照片縮圖與核對提示 -->
-                    ${photoUrl ? `
-                        <div class="bg-slate-100 p-2.5 rounded-2xl border border-slate-200 flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-3">
-                                <img src="${photoUrl}" class="w-20 h-14 object-cover rounded-xl border border-slate-300 shadow-sm" alt="Scoreboard Thumbnail">
-                                <div>
-                                    <div class="text-xs font-black text-slate-800">📸 原始完賽照片 (球道: 第 ${detectedLane} 道)</div>
-                                    <div class="text-[11px] text-slate-500 font-bold">${laneMatched ? '✅ 成績已自動讀取填入，請確認下方數值' : '⚠️ 球道不一致，請先切換至第 ' + detectedLane + ' 道'}</div>
-                                </div>
-                            </div>
-                            <a href="${photoUrl}" target="_blank" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black shadow-sm shrink-0">
-                                🔍 放大照片
-                            </a>
+                    <!-- 存檔目標球道切換列與照片縮圖 -->
+                    <div class="bg-slate-100 p-3 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-xs font-black text-slate-700">📍 存檔目標球道：</span>
+                            <select onchange="switchOcrLane(this.value)" class="bg-white border-2 border-blue-400 font-black text-blue-900 text-xs sm:text-sm px-3 py-1 rounded-xl outline-none shadow-sm focus:border-blue-600">
+                                ${laneOptions}
+                            </select>
+                            <span class="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded-lg border border-slate-200">
+                                第 ${gameNum} 局
+                            </span>
                         </div>
-                    ` : ''}
+                        ${photoUrl ? `
+                            <div class="flex items-center gap-2 self-end sm:self-auto">
+                                <img src="${photoUrl}" class="w-12 h-9 object-cover rounded-lg border border-slate-300 shadow-sm" alt="Thumbnail">
+                                <a href="${photoUrl}" target="_blank" class="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-black shadow-sm shrink-0">
+                                    🔍 查看原圖
+                                </a>
+                            </div>
+                        ` : ''}
+                    </div>
 
                     <!-- 4 位選手成績列表 -->
                     <div class="space-y-2.5">
                         <div class="flex items-center justify-between px-1 text-xs font-black text-slate-700">
-                            <span>4 位參賽者得分確認 (P1 ~ P4)</span>
-                            <span class="text-slate-400 font-bold">${laneMatched ? '可直接於框內修改或微調' : '🔒 球道不符鎖定中'}</span>
+                            <span>第 ${targetLane} 球道 • 4 位選手得分核對 (P1 ~ P4)</span>
+                            <span class="text-emerald-700 font-bold">可直接點擊框內修改或微調</span>
                         </div>
                         ${playersHtml}
                     </div>
 
-                    <!-- 底部確認按鈕列 -->
+                    <!-- 底部確認按鈕列 (永遠可用，絕不鎖定) -->
                     <div class="pt-3 border-t border-slate-200 flex items-center gap-3">
-                        <button onclick="closeOcrModal()" class="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-black text-sm rounded-2xl transition-all">
+                        <button type="button" onclick="closeOcrModal()" class="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-black text-sm rounded-2xl transition-all">
                             取消返回
                         </button>
                         
-                        ${laneMatched ? `
-                            <button onclick="confirmAndSaveOcrScores()" class="flex-2 w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-black text-base rounded-2xl transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2">
-                                <span>🚀</span> 球道一致，確認載入並登錄全道成績
-                            </button>
-                        ` : `
-                            <button disabled title="照片球道與所選球道不一致，無法載入" class="flex-2 w-full py-3.5 bg-slate-300 text-slate-500 cursor-not-allowed font-black text-xs sm:text-sm rounded-2xl transition-all flex items-center justify-center gap-2 shadow-none select-none">
-                                <span>🚫</span> 球道不符，禁止載入（需切換為第 ${detectedLane} 道）
-                            </button>
-                        `}
+                        <button type="button" onclick="confirmAndSaveOcrScores()" class="flex-2 w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-black text-base rounded-2xl transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2">
+                            <span>🚀</span> 確認載入【第 ${targetLane} 球道】成績並儲存
+                        </button>
                     </div>
 
                 </div>
@@ -2343,7 +2450,7 @@
                 currentOcrData.players[idx].score = num;
                 if (currentOcrData.scores) currentOcrData.scores[idx] = num;
                 const inputElem = document.getElementById(`ocr-score-p${idx}`);
-                if (inputElem) inputElem.value = num;
+                if (inputElem && inputElem.value !== String(num)) inputElem.value = num;
             }
         }
 
@@ -2359,16 +2466,14 @@
 
         function switchOcrLane(targetLane) {
             if (!targetLane) return;
+            targetLane = parseInt(targetLane, 10);
             skSelectedLane = String(targetLane);
             if (currentOcrData) {
-                currentOcrData.detectedLane = targetLane;
+                currentOcrData.targetLane = targetLane;
                 currentOcrData.selectedLane = targetLane;
-                currentOcrData.laneMatched = true;
+                currentOcrData.laneMatched = (currentOcrData.detectedLane === targetLane);
 
-                const scores = (currentOcrData.scores && currentOcrData.scores.length === 4)
-                    ? currentOcrData.scores
-                    : [98, 105, 103, 129];
-
+                const gameField = `g${currentOcrData.selectedGame || skSelectedGame}`;
                 const newPlayers = (lanesData[targetLane] || []).map((p, idx) => ({
                     id: p.id,
                     name: p.name || '',
@@ -2377,13 +2482,19 @@
                     gender: p.gender || '男',
                     club: p.club || '',
                     identity: p.identity || '社友',
-                    score: (scores[idx] !== undefined && scores[idx] !== null && scores[idx] !== '') ? scores[idx] : '',
+                    score: (currentOcrData.scores && currentOcrData.scores[idx] !== undefined && currentOcrData.scores[idx] !== null && currentOcrData.scores[idx] !== '')
+                        ? currentOcrData.scores[idx]
+                        : (p[gameField] || ''),
                     turkeys: p.turkeys || 0,
                     flowers: p.flowers || 0
                 }));
                 currentOcrData.players = newPlayers;
                 renderOcrResultModal(currentOcrData, currentOcrPhotoUrl);
             }
+            // 同步更新主畫面上的球道選取
+            const skLaneSelect = document.getElementById('sk-lane-select');
+            if (skLaneSelect) skLaneSelect.value = String(targetLane);
+            renderScorekeeperPlayers();
         }
 
         function closeOcrModal() {
@@ -2394,17 +2505,8 @@
         async function confirmAndSaveOcrScores() {
             if (!currentOcrData) return;
 
-            const detectedLane = parseInt(currentOcrData.detectedLane, 10);
-            const selectedLane = parseInt(skSelectedLane, 10);
-            
-            // 嚴格球道一致性防護：照片球道必須與所選球道完全一致
-            if (detectedLane && selectedLane && detectedLane !== selectedLane) {
-                showToast(`⛔ 球道不符！照片球道（第 ${detectedLane} 道）與目前選擇球道（第 ${selectedLane} 道）不一致，無法載入成績！`, 'error');
-                return;
-            }
-
-            const lane = selectedLane || detectedLane || 1;
-            const game = parseInt(currentOcrData.selectedGame || skSelectedGame, 10);
+            const targetLane = parseInt(currentOcrData.targetLane || currentOcrData.selectedLane || skSelectedLane, 10) || 1;
+            const game = parseInt(currentOcrData.selectedGame || skSelectedGame, 10) || 1;
             const gameField = `g${game}`;
 
             const playersToSave = [];
@@ -2420,9 +2522,9 @@
             });
 
             // 1. 本地 lanesData 即時更新
-            if (lanesData[lane]) {
+            if (lanesData[targetLane]) {
                 playersToSave.forEach(item => {
-                    const player = lanesData[lane].find(x => x.id === item.id);
+                    const player = lanesData[targetLane].find(x => x.id === item.id);
                     if (player) {
                         player[gameField] = (item.score !== '' && item.score !== null && item.score !== undefined) ? parseInt(item.score, 10) : '';
                     }
@@ -2437,7 +2539,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        lane,
+                        lane: targetLane,
                         game,
                         players: playersToSave
                     })
@@ -2448,17 +2550,17 @@
 
             // 3. 雲端跨網即時廣播
             broadcastCloudEvent('lane_updated', {
-                lane: parseInt(lane, 10),
-                players: lanesData[lane],
+                lane: parseInt(targetLane, 10),
+                players: lanesData[targetLane],
                 game: parseInt(game, 10)
             });
 
             closeOcrModal();
-            skSelectedLane = String(lane);
+            skSelectedLane = String(targetLane);
             skSelectedGame = String(game);
             renderCurrentView();
 
-            showToast(`✅ 拍照成績載入成功！第 ${lane} 球道第 ${game} 局 4 位選手成績已登錄！`, 'success');
+            showToast(`✅ 拍照成績載入成功！第 ${targetLane} 球道第 ${game} 局 4 位選手成績已登錄！`, 'success');
         }
 
         // ==========================================

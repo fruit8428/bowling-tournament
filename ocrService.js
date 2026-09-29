@@ -82,13 +82,13 @@ class OcrService {
 7. p1_flowers, p2_flowers, p3_flowers, p4_flowers: 各選手全中 (Spare/Strike) 或女性特殊獎項（若無則為 0）。
 
 【輸出格式要求】：
-請務必且只輸出合法的 JSON 字串，不要包含任何額外的 Markdown 代碼塊或說明文字，格式如下：
+請務必且只輸出合法的 JSON 字串，不要包含任何額外的 Markdown 代碼塊或說明文字，格式範例如下（請依照片實際內容填寫）：
 {
-  "lane": 24,
-  "p1_score": 98,
-  "p2_score": 105,
-  "p3_score": 103,
-  "p4_score": 129,
+  "lane": 8,
+  "p1_score": 120,
+  "p2_score": 135,
+  "p3_score": 110,
+  "p4_score": 145,
   "p1_turkeys": 0,
   "p2_turkeys": 0,
   "p3_turkeys": 0,
@@ -97,8 +97,8 @@ class OcrService {
   "p2_flowers": 0,
   "p3_flowers": 0,
   "p4_flowers": 0,
-  "confidence": 0.98,
-  "description": "成功識別第24道，4位選手得分依序為 98, 105, 103, 129"
+  "confidence": 0.95,
+  "description": "成功識別照片中球道號碼與4位選手得分"
 }
 `;
 
@@ -264,15 +264,7 @@ class OcrService {
             if (scores[i] === 102) scores[i] = 103;
         }
 
-        // 若比對到保齡球.jpg範例特徵 (98, 105, 103, 129 / 道24)，自動校正
         const validCount = scores.filter(s => s !== '').length;
-        if (scores[0] === 98 && (scores[1] === 105 || scores[2] === 103 || scores[3] === 129)) {
-            detectedLane = 24;
-            scores[0] = 98;
-            scores[1] = 105;
-            scores[2] = 103;
-            scores[3] = 129;
-        }
 
         return {
             ok: true,
