@@ -490,6 +490,7 @@
         let PLAYERS_PER_LANE = 4;
         let FEMALE_BONUS = 36;
         let EVENT_NAME = '保齡球聯誼賽';
+        let SCOREKEEPER_PASSWORD = '2222'; // 預設密碼
         let GEMINI_API_KEY = (typeof localStorage !== 'undefined' ? localStorage.getItem('rotary_gemini_api_key') : '') || '';
         let currentOcrFile = null;
 
@@ -1118,12 +1119,13 @@
         }
 
         function getMobileQrUrl() {
-            let origin = window.location.origin.includes('github.io')
-                ? (window.location.origin + window.location.pathname.replace(/\/$/, ''))
+            const locOrigin = window.location.origin || '';
+            let origin = locOrigin.includes('github.io')
+                ? (locOrigin + window.location.pathname.replace(/\/$/, ''))
                 : `http://${detectedLocalIp}:${window.location.port || 3000}`;
 
             const ipSelect = document.getElementById('qr-ip-select');
-            if (ipSelect && ipSelect.value !== 'custom' && ipSelect.value && !window.location.origin.includes('github.io')) {
+            if (ipSelect && ipSelect.value !== 'custom' && ipSelect.value && !locOrigin.includes('github.io')) {
                 origin = `http://${ipSelect.value}:${window.location.port || 3000}`;
             }
 
