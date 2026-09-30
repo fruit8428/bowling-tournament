@@ -415,6 +415,9 @@ app.post('/api/scorekeeper/recognize-photo', upload.single('photo'), async (req,
             engine: result.engine,
             confidence: result.confidence,
             message: result.message,
+            scores: result.scores || players.map(p => p.score),
+            turkeys: result.turkeys || players.map(p => p.turkeys),
+            flowers: result.flowers || players.map(p => p.flowers),
             players
         });
     } catch (err) {

@@ -619,12 +619,17 @@
                     socket.on('lane_updated', (payload) => {
                         const lane = payload.lane;
                         if (payload.players) {
-                            lanesData[lane] = payload.players;
+                            const laneNum = parseInt(lane, 10);
+                            if (typeof mergeLanePlayers === 'function' && lanesData[laneNum]) {
+                                lanesData[laneNum] = mergeLanePlayers(lanesData[laneNum], payload.players);
+                            } else {
+                                lanesData[laneNum] = payload.players;
+                            }
                             saveToLocalStorage();
                             
                             if (currentView === 'dashboard') {
-                                renderDashboardTable(lane);
-                            } else if (currentView === 'scorekeeper' && skSelectedLane == lane) {
+                                renderDashboardTable(laneNum);
+                            } else if (currentView === 'scorekeeper' && skSelectedLane == laneNum) {
                                 renderScorekeeperPlayers();
                             } else if (currentView === 'leaderboard') {
                                 renderLeaderboard();
@@ -783,24 +788,83 @@
             }
         }
 
+        function mergeLanePlayers(localList, remoteList) {
+            if (!remoteList || !Array.isArray(remoteList)) return localList || [];
+            if (!localList || !Array.isArray(localList) || localList.length === 0) return JSON.parse(JSON.stringify(remoteList));
+
+            const result = JSON.parse(JSON.stringify(localList));
+            for (let i = 0; i < remoteList.length; i++) {
+                const rp = remoteList[i];
+                if (!rp) continue;
+                let lp = result[i];
+                if (!lp || (rp.id !== undefined && lp.id !== undefined && String(rp.id) !== String(lp.id))) {
+                    const found = result.find(x => x && rp.id !== undefined && String(x.id) === String(rp.id));
+                    if (found) lp = found;
+                }
+                if (!lp) {
+                    result.push(rp);
+                    continue;
+                }
+                // 成績合併：若遠端有非空成績則更新；若遠端為空但本地已有成績，保留本地有效成績（絕不被空值覆蓋沖掉）
+                ['g1', 'g2', 'g3'].forEach(g => {
+                    if (rp[g] !== '' && rp[g] !== null && rp[g] !== undefined) {
+                        lp[g] = rp[g];
+                    }
+                });
+                if (rp.turkeys !== undefined && rp.turkeys !== null) {
+                    lp.turkeys = Math.max(lp.turkeys || 0, parseInt(rp.turkeys, 10) || 0);
+                }
+                if (rp.flowers !== undefined && rp.flowers !== null) {
+                    lp.flowers = Math.max(lp.flowers || 0, parseInt(rp.flowers, 10) || 0);
+                }
+                if (rp.name && !lp.name) lp.name = rp.name;
+                if (rp.nickname && !lp.nickname) lp.nickname = rp.nickname;
+                if (rp.title && !lp.title) lp.title = rp.title;
+                if (rp.club && !lp.club) lp.club = rp.club;
+                if (rp.gender && !lp.gender) lp.gender = rp.gender;
+                if (rp.identity && !lp.identity) lp.identity = rp.identity;
+            }
+            return result;
+        }
+
+        function mergeLanesData(localLanes, remoteLanes) {
+            if (!remoteLanes) return localLanes || {};
+            if (!localLanes || Object.keys(localLanes).length === 0) return JSON.parse(JSON.stringify(remoteLanes));
+
+            const merged = JSON.parse(JSON.stringify(localLanes));
+            for (const k of Object.keys(remoteLanes)) {
+                if (!merged[k]) {
+                    merged[k] = remoteLanes[k];
+                } else {
+                    merged[k] = mergeLanePlayers(merged[k], remoteLanes[k]);
+                }
+            }
+            return merged;
+        }
+
         function handleIncomingSyncMessage(payload) {
             const { type, lane, players, data, settings } = payload;
 
             if (type === 'lane_updated' && lane && players) {
-                lanesData[lane] = players;
+                const laneNum = parseInt(lane, 10);
+                if (lanesData[laneNum]) {
+                    lanesData[laneNum] = mergeLanePlayers(lanesData[laneNum], players);
+                } else {
+                    lanesData[laneNum] = players;
+                }
                 saveToLocalStorage();
 
                 // 畫面即時刷新
                 if (currentView === 'dashboard') {
-                    renderDashboardTable(lane);
-                } else if (currentView === 'scorekeeper' && skSelectedLane == lane) {
+                    renderDashboardTable(laneNum);
+                } else if (currentView === 'scorekeeper' && skSelectedLane == laneNum) {
                     renderScorekeeperPlayers();
                 } else if (currentView === 'leaderboard') {
                     renderLeaderboard();
                 }
-                showToast(`📡 第 ${lane} 道成績已即時同步更新！`, 'info');
+                showToast(`📡 第 ${laneNum} 道成績已即時同步更新！`, 'info');
             } else if (type === 'bulk_updated' && data) {
-                lanesData = data;
+                lanesData = mergeLanesData(lanesData, data);
                 saveToLocalStorage();
                 renderCurrentView();
                 showToast('📡 全場名單與成績已自雲端完成同步！', 'success');
@@ -815,7 +879,7 @@
                 }
             } else if (type === 'sync_response') {
                 if (payload.targetClientId === myClientId && payload.data) {
-                    lanesData = payload.data;
+                    lanesData = mergeLanesData(lanesData, payload.data);
                     if (payload.settings) applySettings(payload.settings);
                     saveToLocalStorage();
                     renderCurrentView();
@@ -1777,7 +1841,7 @@
                 </div>
             `;
 
-            players.forEach(player => {
+            players.forEach((player, pIndex) => {
                 const scoreVal = player[`g${skSelectedGame}`];
                 const isFemale = player.gender === '女';
 
@@ -1868,8 +1932,13 @@
                             <div class="flex items-center gap-3">
                                 <label class="font-black text-slate-700 text-sm whitespace-nowrap">第 ${skSelectedGame} 局分數：</label>
                                 <input type="number" min="0" max="300" 
+                                    id="sk-score-p${player.id}"
+                                    data-player-id="${player.id}"
+                                    data-player-idx="${pIndex}"
+                                    autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric"
                                     ${isSkLocked ? 'disabled' : ''}
                                     value="${scoreVal !== undefined && scoreVal !== null ? scoreVal : ''}" 
+                                    oninput="updatePlayerScoreLive(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', this.value)"
                                     onchange="updatePlayerScoreLive(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', this.value)" 
                                     placeholder="0 - 300" 
                                     class="flex-1 p-2.5 border-2 border-blue-300 text-2xl text-center rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-100 font-black text-blue-950 bg-white transition-all shadow-inner">
@@ -2019,15 +2088,33 @@
         async function saveScorekeeperData() {
             if (isSkLocked) return;
 
+            const targetLane = parseInt(skSelectedLane, 10) || 1;
+            const game = parseInt(skSelectedGame, 10) || 1;
+            const gameField = `g${game}`;
+
+            // 1. 強制自 DOM 輸入框即時擷取最新值，保證行動端在點擊儲存按鈕時未觸發 blur/change 也能 100% 存入 P1~P4 成績
+            if (lanesData[targetLane]) {
+                lanesData[targetLane].forEach((player, idx) => {
+                    const pId = (player.id !== undefined && player.id !== null && player.id !== '' && parseInt(player.id, 10) > 0) ? parseInt(player.id, 10) : (idx + 1);
+                    const inputElem = document.getElementById(`sk-score-p${pId}`) || document.querySelector(`[data-player-idx="${idx}"]`);
+                    if (inputElem && inputElem.value !== '' && inputElem.value !== null && inputElem.value !== undefined) {
+                        const parsed = parseInt(String(inputElem.value).trim(), 10);
+                        if (!isNaN(parsed)) {
+                            player[gameField] = Math.max(0, Math.min(300, parsed));
+                        }
+                    }
+                });
+            }
+
             saveToLocalStorage();
             window.dispatchEvent(new Event('storage'));
 
-            // 1. 本地 Socket.IO / REST 存檔
+            // 2. 本地 Socket.IO / REST 存檔
             if (socket && socket.connected) {
                 socket.emit('lane:save_scores', {
-                    lane: skSelectedLane,
-                    players: lanesData[skSelectedLane],
-                    game: skSelectedGame
+                    lane: targetLane,
+                    players: lanesData[targetLane],
+                    game: game
                 });
             } else {
                 try {
@@ -2036,21 +2123,21 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            lane: skSelectedLane,
-                            players: lanesData[skSelectedLane]
+                            lane: targetLane,
+                            players: lanesData[targetLane]
                         })
                     });
                 } catch (e) {}
             }
 
-            // 2. 雲端跨網即時廣播
+            // 3. 雲端跨網即時廣播
             broadcastCloudEvent('lane_updated', {
-                lane: parseInt(skSelectedLane, 10),
-                players: lanesData[skSelectedLane],
-                game: parseInt(skSelectedGame, 10)
+                lane: targetLane,
+                players: lanesData[targetLane],
+                game: game
             });
 
-            showToast(`第 ${skSelectedGame} 局成績儲存成功！全場已即時同步`, 'success');
+            showToast(`第 ${game} 局成績儲存成功！全場已即時同步`, 'success');
         }
 
         // ==========================================
@@ -2634,7 +2721,9 @@
                     const detectedLane = parseInt(result.detectedLane, 10) || selectedLane;
                     const targetLane = (detectedLane >= 1 && detectedLane <= 40) ? detectedLane : selectedLane;
                     const laneMatched = (detectedLane === selectedLane);
-                    const detectedScores = result.scores || ['', '', '', ''];
+                    const detectedScores = (result.scores && Array.isArray(result.scores))
+                        ? result.scores
+                        : (result.players ? result.players.map(p => p.score) : ['', '', '', '']);
                     const gameField = `g${curSelectedGame}`;
 
                     // 綁定目標球道之選手名冊
@@ -2645,7 +2734,7 @@
                         const autoFlowers = (result.flowers && result.flowers[idx] !== undefined) ? result.flowers[idx] : (p.flowers || 0);
                         const autoCropUrl = (result.scoreCropUrls && result.scoreCropUrls[idx]) ? result.scoreCropUrls[idx] : '';
                         return {
-                            id: (p.id !== undefined && p.id !== null && p.id !== '') ? p.id : (idx + 1),
+                            id: (p.id !== undefined && p.id !== null && p.id !== '' && parseInt(p.id, 10) > 0) ? parseInt(p.id, 10) : (idx + 1),
                             name: p.name || '',
                             title: p.title || '',
                             nickname: p.nickname || '',
@@ -2666,7 +2755,8 @@
                         targetLane,
                         laneMatched,
                         selectedGame: curSelectedGame,
-                        scores: detectedScores,
+                        scores: [...detectedScores],
+                        rawDetectedScores: [...detectedScores],
                         turkeys: result.turkeys || [0, 0, 0, 0],
                         flowers: result.flowers || [0, 0, 0, 0],
                         laneCropUrl: result.laneCropUrl || '',
@@ -2737,8 +2827,11 @@
                                 <label class="text-xs font-black text-slate-700 whitespace-nowrap">第 ${gameNum} 局得分：</label>
                                 <input type="number" min="0" max="300" 
                                        id="ocr-score-p${idx}" 
+                                       data-ocr-idx="${idx}"
+                                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric"
                                        value="${p.score !== undefined && p.score !== null ? p.score : ''}" 
                                        oninput="onOcrScoreChange(${idx}, this.value)"
+                                       onchange="onOcrScoreChange(${idx}, this.value)"
                                        placeholder="請輸入 0 ~ 300" 
                                        class="w-full p-2.5 border-2 border-blue-400 bg-white text-blue-950 font-black text-2xl text-center rounded-xl focus:border-blue-600 outline-none transition-all shadow-inner">
                             </div>
@@ -2916,15 +3009,20 @@
 
         function onOcrScoreChange(idx, val) {
             if (currentOcrData && currentOcrData.players && currentOcrData.players[idx]) {
-                let num = val === '' ? '' : parseInt(val, 10);
-                if (num !== '') {
-                    if (isNaN(num)) num = '';
-                    else num = Math.max(0, Math.min(300, num));
+                const trimmed = (val === null || val === undefined) ? '' : String(val).trim();
+                let num = '';
+                if (trimmed !== '') {
+                    const parsed = parseInt(trimmed, 10);
+                    if (!isNaN(parsed)) {
+                        num = Math.max(0, Math.min(300, parsed));
+                    }
                 }
                 currentOcrData.players[idx].score = num;
                 if (currentOcrData.scores) currentOcrData.scores[idx] = num;
                 const inputElem = document.getElementById(`ocr-score-p${idx}`);
-                if (inputElem && inputElem.value !== String(num)) inputElem.value = num;
+                if (inputElem && trimmed !== '' && inputElem.value !== String(num)) {
+                    inputElem.value = num;
+                }
             }
         }
 
@@ -2977,7 +3075,7 @@
                 const newPlayers = (lanesData[targetLane] || []).map((p, idx) => {
                     const oldP = currentOcrData.players ? currentOcrData.players[idx] : null;
                     return {
-                        id: (p.id !== undefined && p.id !== null && p.id !== '') ? p.id : (idx + 1),
+                        id: (p.id !== undefined && p.id !== null && p.id !== '' && parseInt(p.id, 10) > 0) ? parseInt(p.id, 10) : (idx + 1),
                         name: p.name || '',
                         title: p.title || '',
                         nickname: p.nickname || '',
@@ -2986,7 +3084,9 @@
                         identity: p.identity || '社友',
                         score: (currentOcrData.scores && currentOcrData.scores[idx] !== undefined && currentOcrData.scores[idx] !== null && currentOcrData.scores[idx] !== '')
                             ? currentOcrData.scores[idx]
-                            : (p[gameField] || ''),
+                            : ((currentOcrData.rawDetectedScores && currentOcrData.rawDetectedScores[idx] !== undefined && currentOcrData.rawDetectedScores[idx] !== null && currentOcrData.rawDetectedScores[idx] !== '')
+                                ? currentOcrData.rawDetectedScores[idx]
+                                : (p[gameField] || '')),
                         turkeys: oldP ? (oldP.turkeys || 0) : (p.turkeys || 0),
                         flowers: oldP ? (oldP.flowers || 0) : (p.flowers || 0),
                         cropUrl: oldP ? (oldP.cropUrl || '') : ''
@@ -3018,16 +3118,21 @@
 
             const playersToSave = [];
             (currentOcrData.players || []).forEach((p, idx) => {
-                const inputElem = document.getElementById(`ocr-score-p${idx}`);
+                const inputElem = document.getElementById(`ocr-score-p${idx}`) || document.querySelector(`[data-ocr-idx="${idx}"]`);
                 
-                // 多層級保底取分邏輯：優先取輸入框非空值，其次取 p.score，再次取 currentOcrData.scores[idx]
+                // 多層級極限保底取分邏輯：優先取輸入框非空值，其次取 p.score，再次取 currentOcrData.scores[idx]，終極以 rawDetectedScores[idx] 兜底
                 let scoreVal = '';
                 if (inputElem && inputElem.value !== '' && inputElem.value !== null && inputElem.value !== undefined) {
                     scoreVal = String(inputElem.value).trim();
-                } else if (p.score !== undefined && p.score !== null && p.score !== '') {
+                }
+                if (scoreVal === '' && p.score !== undefined && p.score !== null && p.score !== '') {
                     scoreVal = String(p.score).trim();
-                } else if (currentOcrData.scores && currentOcrData.scores[idx] !== undefined && currentOcrData.scores[idx] !== null && currentOcrData.scores[idx] !== '') {
+                }
+                if (scoreVal === '' && currentOcrData.scores && currentOcrData.scores[idx] !== undefined && currentOcrData.scores[idx] !== null && currentOcrData.scores[idx] !== '') {
                     scoreVal = String(currentOcrData.scores[idx]).trim();
+                }
+                if (scoreVal === '' && currentOcrData.rawDetectedScores && currentOcrData.rawDetectedScores[idx] !== undefined && currentOcrData.rawDetectedScores[idx] !== null && currentOcrData.rawDetectedScores[idx] !== '') {
+                    scoreVal = String(currentOcrData.rawDetectedScores[idx]).trim();
                 }
 
                 // 數值化轉換與範圍校驗 (0 ~ 300)
@@ -3039,8 +3144,8 @@
                     }
                 }
 
-                // 嚴謹解析 ID (避開 0 || 1 導致第 1 位選手 ID 錯置問題)
-                const resolvedId = (p.id !== undefined && p.id !== null && p.id !== '') ? p.id : (idx + 1);
+                // 嚴謹解析 ID (避開 0 || 1 導致第 1 位選手 ID 錯置問題，保證 1-based order)
+                const resolvedId = (p.id !== undefined && p.id !== null && p.id !== '' && parseInt(p.id, 10) > 0) ? parseInt(p.id, 10) : (idx + 1);
 
                 playersToSave.push({
                     idx: idx,
@@ -3054,8 +3159,6 @@
             // 1. 本地 lanesData 即時更新 (包含成績、火雞次數、霸王花次數)
             if (lanesData[targetLane]) {
                 playersToSave.forEach((item, idx) => {
-                    // 關鍵修正：優先依席位順序索引 idx (0 -> P1, 1 -> P2, 2 -> P3, 3 -> P4) 寫入
-                    // 若有 id 則輔助字串比對，徹底防止因 id 為 0、字串/數值型態差異或找錯選手導致 P1 成績遺失
                     let player = lanesData[targetLane][idx];
                     if (!player || (item.id !== undefined && player.id !== undefined && String(player.id) !== String(item.id))) {
                         const found = lanesData[targetLane].find(x => String(x.id) === String(item.id));
@@ -3069,10 +3172,14 @@
                 });
                 saveToLocalStorage();
                 window.dispatchEvent(new Event('storage'));
-                renderScorekeeperPlayers();
-                if (currentView === 'admin' && typeof renderAdminStats === 'function') {
-                    renderAdminStats();
-                }
+            }
+
+            // 更新記分員選中球道與局數
+            skSelectedLane = String(targetLane);
+            skSelectedGame = String(game);
+            renderScorekeeperPlayers();
+            if (currentView === 'admin' && typeof renderAdminStats === 'function') {
+                renderAdminStats();
             }
 
             // 2. 本地 Socket.IO / REST 存檔 (若有伺服器連線)
@@ -3106,8 +3213,6 @@
             });
 
             closeOcrModal();
-            skSelectedLane = String(targetLane);
-            skSelectedGame = String(game);
             renderCurrentView();
 
             showToast(`✅ 第 ${targetLane} 球道第 ${game} 局成績辨識登錄成功！全場已即時同步`, 'success');

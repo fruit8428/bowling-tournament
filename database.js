@@ -328,8 +328,13 @@ function updatePlayerField(lane, playerOrder, field, value) {
 
 function batchUpdateLane(lane, playersList) {
     const updateTx = db.transaction((players) => {
-        for (const p of players) {
-            updatePlayer(lane, p.id, p);
+        for (let i = 0; i < players.length; i++) {
+            const p = players[i];
+            let pOrder = parseInt(p.id, 10);
+            if (isNaN(pOrder) || pOrder < 1 || pOrder > 4) {
+                pOrder = i + 1;
+            }
+            updatePlayer(lane, pOrder, p);
         }
     });
     updateTx(playersList);
@@ -339,8 +344,12 @@ function batchUpdateLane(lane, playersList) {
 function batchSaveGameScores(lane, game, scoresList) {
     const gameField = `g${game}`;
     const updateTx = db.transaction((list) => {
-        for (const item of list) {
-            const pId = item.id;
+        for (let i = 0; i < list.length; i++) {
+            const item = list[i];
+            let pId = parseInt(item.id, 10);
+            if (isNaN(pId) || pId < 1 || pId > 4) {
+                pId = i + 1;
+            }
             let scoreVal = (item.score === '' || item.score === null || item.score === undefined) ? null : parseInt(item.score, 10);
             if (scoreVal !== null) {
                 scoreVal = Math.max(0, Math.min(300, scoreVal));
