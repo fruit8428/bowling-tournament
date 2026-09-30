@@ -102,30 +102,57 @@ class OcrService {
 }
 `;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [
-                {
-                    role: 'user',
-                    parts: [
-                        { text: prompt },
-                        {
-                            inlineData: {
-                                mimeType,
-                                data: base64Image
+        let response;
+        try {
+            response = await ai.models.generateContent({
+                model: 'gemini-2.0-flash',
+                contents: [
+                    {
+                        role: 'user',
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType,
+                                    data: base64Image
+                                }
                             }
-                        }
-                    ]
+                        ]
+                    }
+                ],
+                config: {
+                    temperature: 0.1,
+                    responseMimeType: 'application/json'
                 }
-            ],
-            config: {
-                temperature: 0.1,
-                responseMimeType: 'application/json'
-            }
-        });
+            });
+        } catch (e1) {
+            response = await ai.models.generateContent({
+                model: 'gemini-1.5-flash',
+                contents: [
+                    {
+                        role: 'user',
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType,
+                                    data: base64Image
+                                }
+                            }
+                        ]
+                    }
+                ],
+                config: {
+                    temperature: 0.1,
+                    responseMimeType: 'application/json'
+                }
+            });
+        }
 
         const rawText = response.text || '';
-        const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        let cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+        if (jsonMatch) cleanJson = jsonMatch[0];
         const data = JSON.parse(cleanJson);
 
         const sanitizeScore = (s) => {
@@ -247,12 +274,7 @@ class OcrService {
         // 2. 智慧保齡球專用字體轉譯函數 (包含空心字、連字與邊緣假字過濾)
         function smartCleanBowlingScore(raw) {
             if (!raw) return '';
-            let s = raw.trim();
-
-            // 特殊保齡球空心字連字與特徵樣式對應 (例如 98 常被視為 E3, =F, IE, ES1S3, S138, 33)
-            if (/^(E3|=F|IE|ES1S3|S138|28\.|33|3\s*3)/i.test(s) || s === 'E3' || s === '33' || s === 'IE' || s === '=F') {
-                return 98;
-            }
+            let s = String(raw).trim();
 
             s = s.replace(/\"/g, '5')
                  .replace(/[=\)\]\}]/g, '3')
@@ -266,9 +288,17 @@ class OcrService {
             if (!digits) return '';
 
             let num = parseInt(digits, 10);
-            if (num >= 0 && num <= 300) return num;
+            if (num >= 0 && num <= 300 && digits.length <= 3) return num;
 
-            // 處理 4 位數假字 (例如 103 伴隨右側邊框被視為 1033 或 1293)
+            // AMF AccuScore 空心字雙重輪廓修正 (例如 1005 -> 105, 1003 -> 103, 1008 -> 108)
+            if (/^100\d$/.test(digits)) {
+                return parseInt('10' + digits[3], 10);
+            }
+            if (/^1(\d)\1(\d)$/.test(digits)) {
+                return parseInt('1' + digits[1] + digits[3], 10);
+            }
+
+            // 處理 4 位數假字 (例如 1033 或 1293 因邊框產生的假字)
             if (digits.length === 4) {
                 const first3 = parseInt(digits.substring(0, 3), 10);
                 if (first3 >= 0 && first3 <= 300) return first3;
@@ -321,8 +351,8 @@ class OcrService {
             if (curBand && curBand.end - curBand.start >= 6) blueBands.push(curBand);
 
             if (blueBands.length >= 5) {
-                const sLeft = Math.floor(width * 0.8338);
-                const sWidth = Math.floor(width * 0.096);
+                const sLeft = Math.floor(width * 0.815);
+                const sWidth = Math.floor(width * 0.145);
                 for (let i = 0; i < 4; i++) {
                     const topBand = blueBands[i];
                     const bottomBand = blueBands[i + 1];
@@ -330,9 +360,9 @@ class OcrService {
                     const rowH = bottomBand.start - rowY;
                     scoreBoxes.push({
                         left: sLeft,
-                        top: Math.floor(rowY + rowH * 0.455),
+                        top: Math.floor(rowY + rowH * 0.44),
                         width: sWidth,
-                        height: Math.floor(rowH * 0.55)
+                        height: Math.floor(rowH * 0.56)
                     });
                 }
             }
@@ -343,13 +373,13 @@ class OcrService {
         // 若動態分隔條未滿 5 條，使用比例備援座標
         if (scoreBoxes.length < 4) {
             const configs = [
-                { topPct: 0.4655, hPct: 0.043 },
-                { topPct: 0.5931, hPct: 0.043 },
-                { topPct: 0.7183, hPct: 0.043 },
-                { topPct: 0.8435, hPct: 0.043 }
+                { topPct: 0.445, hPct: 0.052 },
+                { topPct: 0.570, hPct: 0.052 },
+                { topPct: 0.690, hPct: 0.052 },
+                { topPct: 0.810, hPct: 0.052 }
             ];
-            const sLeft = Math.floor(width * 0.8338);
-            const sWidth = Math.floor(width * 0.096);
+            const sLeft = Math.floor(width * 0.815);
+            const sWidth = Math.floor(width * 0.145);
             scoreBoxes = configs.map(c => ({
                 left: sLeft,
                 top: Math.floor(height * c.topPct),

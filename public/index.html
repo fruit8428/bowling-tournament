@@ -554,6 +554,14 @@
                 localStorage.setItem('bowling_cloud_room_id', cloudRoomId);
             }
 
+            const queryGeminiKey = urlParams.get('gemini_key');
+            if (queryGeminiKey && queryGeminiKey.trim()) {
+                GEMINI_API_KEY = queryGeminiKey.trim();
+                try {
+                    localStorage.setItem('rotary_gemini_api_key', GEMINI_API_KEY);
+                } catch (e) {}
+            }
+
             const validPassword = SCOREKEEPER_PASSWORD || '2222';
             if (queryPwd === validPassword || queryPwd === '2222' || queryAuth === 'true') {
                 isScorekeeperAuthenticated = true;
@@ -1178,6 +1186,9 @@
             let url = `${origin}/?room=${encodeURIComponent(cloudRoomId)}&view=scorekeeper&pwd=${encodeURIComponent(pwd)}&auth=true`;
             if (targetLane && targetLane !== 'all') {
                 url += `&lane=${targetLane}`;
+            }
+            if (GEMINI_API_KEY && GEMINI_API_KEY.trim()) {
+                url += `&gemini_key=${encodeURIComponent(GEMINI_API_KEY.trim())}`;
             }
             return url;
         }
@@ -2063,14 +2074,55 @@
             return sharedTesseractWorker;
         }
 
+        async function compressImageForVision(file, maxDimension = 1600, quality = 0.85) {
+            return new Promise((resolve) => {
+                if (!file || !file.type || !file.type.startsWith('image/')) {
+                    return resolve(file);
+                }
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        let { width, height } = img;
+                        if (width <= maxDimension && height <= maxDimension && file.size < 800 * 1024) {
+                            return resolve(file);
+                        }
+                        if (width > height) {
+                            if (width > maxDimension) {
+                                height = Math.round((height * maxDimension) / width);
+                                width = maxDimension;
+                            }
+                        } else {
+                            if (height > maxDimension) {
+                                width = Math.round((width * maxDimension) / height);
+                                height = maxDimension;
+                            }
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        canvas.toBlob((blob) => {
+                            if (!blob) return resolve(file);
+                            const compressed = new File([blob], (file.name || 'scoreboard.jpg').replace(/\.[^/.]+$/, "") + ".jpg", {
+                                type: 'image/jpeg',
+                                lastModified: Date.now()
+                            });
+                            resolve(compressed);
+                        }, 'image/jpeg', quality);
+                    };
+                    img.onerror = () => resolve(file);
+                    img.src = e.target.result;
+                };
+                reader.onerror = () => resolve(file);
+                reader.readAsDataURL(file);
+            });
+        }
+
         function cleanBowlingScore(raw) {
             if (!raw) return '';
-            let s = raw.trim();
-
-            // 特殊保齡球空心字連字與特徵樣式對應 (例如 98 常被視為 E3, =F, IE, ES1S3, S138, 33)
-            if (/^(E3|=F|IE|ES1S3|S138|28\.|33|3\s*3)/i.test(s) || s === 'E3' || s === '33' || s === 'IE' || s === '=F') {
-                return 98;
-            }
+            let s = String(raw).trim();
 
             s = s.replace(/\"/g, '5')
                  .replace(/[=\)\]\}]/g, '3')
@@ -2084,9 +2136,17 @@
             if (!digits) return '';
 
             let num = parseInt(digits, 10);
-            if (num >= 0 && num <= 300) return num;
+            if (num >= 0 && num <= 300 && digits.length <= 3) return num;
 
-            // 處理 4 位數假字 (例如 103 伴隨右側邊框被視為 1033 或 1293)
+            // AMF AccuScore 空心字雙重輪廓修正 (例如 1005 -> 105, 1003 -> 103, 1008 -> 108)
+            if (/^100\d$/.test(digits)) {
+                return parseInt('10' + digits[3], 10);
+            }
+            if (/^1(\d)\1(\d)$/.test(digits)) {
+                return parseInt('1' + digits[1] + digits[3], 10);
+            }
+
+            // 處理 4 位數假字 (例如 1033 或 1293 因邊框產生的假字)
             if (digits.length === 4) {
                 const first3 = parseInt(digits.substring(0, 3), 10);
                 if (first3 >= 0 && first3 <= 300) return first3;
@@ -2112,19 +2172,20 @@
                         const mimeType = file.type || 'image/jpeg';
 
                         const prompt = `你是一位專業的保齡球賽事視覺辨識專家。
-請仔細分析這張保齡球館完賽計分板照片（包含上方懸掛/牆壁上的球道號碼牌數字，以及電視螢幕中的 4 位選手計分板）。
+請仔細分析這張保齡球館完賽計分板照片（通常包含球道上方懸掛/牆壁上的紅色球道號碼燈箱或螢幕標題，以及電視螢幕中的 4 位選手計分板）。
 
-請精準讀取並擷取以下資訊：
-1. lane: 球道號碼 (通常顯示在電視上方懸掛的球道號碼牌、燈箱或螢幕標題列，例如 24 或 8)。若完全無法判斷請填 ${selectedLane}。
-2. p1_score: 第 1 位選手（第 1 行）的最終累積總分（通常在第 10 格 Frame 10 下方累計總分欄位，介於 0 到 300 之間）。
-3. p2_score: 第 2 位選手（第 2 行）的最終累積總分。
-4. p3_score: 第 3 位選手（第 3 行）的最終累積總分。
-5. p4_score: 第 4 位選手（第 4 行）的最終累積總分。
-6. p1_turkeys, p2_turkeys, p3_turkeys, p4_turkeys: 各選手連續 3 次全倒 (Turkey) 的次數（若無則為 0）。
-7. p1_flowers, p2_flowers, p3_flowers, p4_flowers: 各選手特殊分瓶 (如 5+7+10 霸王花) 或全中次數（若無則為 0）。
+【保齡球計分板結構說明】：
+1. 球道號碼 (lane): 通常為電視螢幕正上方懸掛的球道號碼牌（如新喬福球館的紅底白字/紅色大字牌 1~40），或是電視螢幕頂部標示。若圖片中看到明確球道號碼請填寫；若無法明確辨識則填寫 ${selectedLane}。
+2. 選手累積總分 (p1_score, p2_score, p3_score, p4_score):
+   - 螢幕通常分為 4 列（分別代表第 1、2、3、4 位選手）。
+   - 每位選手在最右側的「第 10 格 (Frame 10)」下方，會有該局打完後的「最終累積總分（累計總成績）」。
+   - 分數通常介於 0 到 300 之間（常見為 60~250 分）。請特別注意：不要只讀取第 10 格上方的小格擊倒瓶數（如 9, /, X），而是要讀取下方該選手該局結束的大字累積總得分！
+3. 特別獎項：
+   - turkeys: 連續三次全倒 (Turkey) 次數（若無請填 0）。
+   - flowers: 5+7+10 霸王花分瓶或特殊開花分瓶次數（若無請填 0）。
 
 【輸出格式要求】：
-請務必且只輸出合法的 JSON 字串，不要包含任何額外的 Markdown 代碼塊或說明文字：
+請只輸出標準的 JSON 格式物件，不要加入任何額外說明文字或 markdown 程式碼外框：
 {
   "lane": ${selectedLane},
   "p1_score": 98,
@@ -2140,7 +2201,7 @@
   "p3_flowers": 0,
   "p4_flowers": 0,
   "confidence": 0.99,
-  "description": "Gemini AI 成功辨識成績"
+  "description": "已精準辨識球道與 4 位選手完賽累積總分"
 }`;
 
                         let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
@@ -2187,15 +2248,21 @@
                         }
 
                         const resData = await res.json();
-                        const jsonText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                        const parsed = JSON.parse(jsonText.replace(/```json/g, '').replace(/```/g, '').trim());
+                        let jsonText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) jsonText = jsonMatch[0];
+                        const parsed = JSON.parse(jsonText);
 
-                        const cleanScore = (s) => (s !== null && s !== undefined && s !== '' && !isNaN(parseInt(s, 10))) ? parseInt(s, 10) : '';
+                        const cleanScore = (s) => {
+                            if (s === null || s === undefined || s === '') return '';
+                            const n = parseInt(String(s).replace(/\D/g, ''), 10);
+                            return (!isNaN(n) && n >= 0 && n <= 300) ? n : '';
+                        };
                         const laneVal = parseInt(parsed.lane, 10) || selectedLane;
 
                         resolve({
                             ok: true,
-                            engine: 'Gemini 2.5 Flash AI Vision',
+                            engine: 'Google Gemini 2.0 Flash AI 超高精度視覺',
                             detectedLane: (laneVal >= 1 && laneVal <= 40) ? laneVal : selectedLane,
                             selectedLane: selectedLane,
                             scores: [
@@ -2217,7 +2284,7 @@
                                 parseInt(parsed.p4_flowers, 10) || 0
                             ],
                             confidence: parsed.confidence || 0.99,
-                            message: parsed.description || 'Gemini AI Vision 已精準讀取球道與全數成績'
+                            message: parsed.description || 'Google Gemini AI 已精準讀取球道與全數選手成績'
                         });
                     } catch (err) {
                         console.error('Gemini Vision client error:', err);
@@ -2345,13 +2412,13 @@
 
                             // 2. 辨識 4 位選手 Frame 10 累積總分與局部截圖
                             const configs = [
-                                { topPct: 0.4655, hPct: 0.043 },
-                                { topPct: 0.5931, hPct: 0.0415 },
-                                { topPct: 0.7183, hPct: 0.0415 },
-                                { topPct: 0.8435, hPct: 0.0407 }
+                                { topPct: 0.445, hPct: 0.052 },
+                                { topPct: 0.570, hPct: 0.052 },
+                                { topPct: 0.690, hPct: 0.052 },
+                                { topPct: 0.810, hPct: 0.052 }
                             ];
-                            const sLeft = Math.floor(width * 0.8338);
-                            const sWidth = Math.floor(width * 0.096);
+                            const sLeft = Math.floor(width * 0.815);
+                            const sWidth = Math.floor(width * 0.145);
 
                             if (worker) {
                                 await worker.setParameters({ tessedit_pageseg_mode: '6' });
@@ -2473,8 +2540,7 @@
 
         async function handleScoreboardPhotoUpload(input) {
             if (!input || !input.files || input.files.length === 0) return;
-            const file = input.files[0];
-            currentOcrFile = file;
+            const originalFile = input.files[0];
             input.value = ''; // 重設以允許重複選取同張圖
 
             const modal = document.getElementById('ocr-modal');
@@ -2486,7 +2552,7 @@
             if (currentOcrPhotoUrl) {
                 URL.revokeObjectURL(currentOcrPhotoUrl);
             }
-            currentOcrPhotoUrl = URL.createObjectURL(file);
+            currentOcrPhotoUrl = URL.createObjectURL(originalFile);
 
             content.innerHTML = `
                 <div class="py-12 flex flex-col items-center justify-center space-y-4 text-center">
@@ -2495,7 +2561,7 @@
                         <div class="absolute inset-0 flex items-center justify-center text-3xl">📸</div>
                     </div>
                     <div class="space-y-1.5">
-                        <h4 class="text-lg font-black text-slate-800">正在辨識完賽計分板照片...</h4>
+                        <h4 class="text-lg font-black text-slate-800">正在優化並辨識完賽計分板照片...</h4>
                         <p class="text-xs text-slate-500 font-medium">系統正在分析球道牌、選手成績與特別獎項</p>
                     </div>
                     <div class="max-w-xs mx-auto mt-2 rounded-2xl overflow-hidden shadow-md border border-slate-200 opacity-80">
@@ -2505,6 +2571,10 @@
             `;
 
             try {
+                // 智慧影像尺寸最佳化（壓縮至適合 AI 與電腦視覺的 1600px 尺寸，防止 Safari 記憶體不足崩潰與超時）
+                const file = await compressImageForVision(originalFile, 1600, 0.85);
+                currentOcrFile = file;
+
                 const curSelectedLane = parseInt(skSelectedLane, 10) || 1;
                 const curSelectedGame = parseInt(skSelectedGame, 10) || 1;
 
@@ -2649,10 +2719,10 @@
                             </div>
 
                             <div class="flex items-center gap-1 shrink-0">
-                                <button type="button" onclick="adjustOcrScore(${idx}, -5)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">-5</button>
-                                <button type="button" onclick="adjustOcrScore(${idx}, -1)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">-1</button>
-                                <button type="button" onclick="adjustOcrScore(${idx}, 1)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">+1</button>
-                                <button type="button" onclick="adjustOcrScore(${idx}, 5)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">+5</button>
+                                <button type="button" onclick="adjustOcrScore(${idx}, -10)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm" title="減 10 分">-10</button>
+                                <button type="button" onclick="adjustOcrScore(${idx}, -1)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm" title="減 1 分">-1</button>
+                                <button type="button" onclick="adjustOcrScore(${idx}, 1)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm" title="加 1 分">+1</button>
+                                <button type="button" onclick="adjustOcrScore(${idx}, 10)" class="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm" title="加 10 分">+10</button>
                             </div>
                         </div>
 
@@ -2706,7 +2776,9 @@
                                             <img src="${data.laneCropUrl}" class="h-6 max-w-[60px] object-contain" alt="Lane Sign">
                                         </div>
                                     ` : ''}
-                                    <span class="text-[10px] font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">${data.engine || '視覺辨識'}</span>
+                                    ${data.engine && data.engine.includes('Gemini') 
+                                        ? `<span class="text-[10px] font-black bg-purple-700 text-white px-2.5 py-1 rounded-full shadow-sm flex items-center gap-1"><span>✨</span> Google Gemini AI</span>`
+                                        : `<span class="text-[10px] font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">${data.engine || '本機電腦視覺'}</span>`}
                                 </div>
                             </div>
                             <div class="text-xs text-emerald-700 font-medium">
@@ -2775,15 +2847,27 @@
                     </div>
 
                     <!-- Gemini AI 智慧增強抽屜 (支援各式角度與字體) -->
-                    <div class="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-3 rounded-2xl border border-purple-200 space-y-2 shadow-sm">
-                        <div class="flex items-center justify-between">
+                    <div class="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-3.5 rounded-2xl border border-purple-200 space-y-2.5 shadow-sm">
+                        <div class="flex items-center justify-between flex-wrap gap-1">
                             <div class="flex items-center gap-1.5 text-xs font-black text-purple-900">
-                                <span>🤖</span> Google Gemini 2.5 Flash AI 視覺辨識
+                                <span>🤖</span> Google Gemini 2.0 Flash AI 視覺辨識引擎
                             </div>
-                            <span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">${GEMINI_API_KEY ? '已設定 API Key' : '免伺服器直連'}</span>
+                            <div class="flex items-center gap-2">
+                                <a href="https://aistudio.google.com/apikey" target="_blank" class="text-[10px] text-purple-700 hover:underline font-bold">
+                                    🔑 免費取得 API Key ↗
+                                </a>
+                                <span class="text-[10px] font-bold ${GEMINI_API_KEY ? 'text-emerald-700 bg-emerald-100 border border-emerald-300' : 'text-purple-700 bg-purple-100'} px-2 py-0.5 rounded-full">
+                                    ${GEMINI_API_KEY ? '✓ 已啟動 Gemini AI' : '免伺服器直連'}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="text-[11px] text-purple-800 leading-snug">
+                            ${GEMINI_API_KEY 
+                                ? '大會已設定 Google AI 視覺金鑰，所有手機辨識均已享有 100% 擬真智慧閱讀能力。' 
+                                : '若需達到 100% 精準辨識，只需貼上 Google Gemini API Key（大會電腦設定後會隨 QR Code 自動分發至所有手機，無需各道逐一設定）。'}
                         </div>
                         <div class="flex items-center gap-2">
-                            <input type="password" id="modal-gemini-key" value="${GEMINI_API_KEY || ''}" placeholder="貼上 Gemini API Key 享受頂級 AI 辨識" class="flex-1 bg-white border border-purple-300 rounded-xl px-2.5 py-1.5 text-xs font-mono outline-none text-purple-950 focus:border-purple-600 shadow-inner">
+                            <input type="password" id="modal-gemini-key" value="${GEMINI_API_KEY || ''}" placeholder="貼上 AIzaSy... 開啟 100% 精準辨識" class="flex-1 bg-white border border-purple-300 rounded-xl px-2.5 py-1.5 text-xs font-mono outline-none text-purple-950 focus:border-purple-600 shadow-inner">
                             <button type="button" onclick="saveGeminiKeyAndRerun()" class="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-sm shrink-0 transition-all">
                                 儲存並 AI 重辨
                             </button>
@@ -4214,6 +4298,7 @@
             TOTAL_LANES = parseInt(lanes, 10) || 40;
             SCOREKEEPER_PASSWORD = String(pwd).trim() || '2222';
             GEMINI_API_KEY = apiKey.trim();
+            try { localStorage.setItem('rotary_gemini_api_key', GEMINI_API_KEY); } catch (e) {}
 
             if (socket && socket.connected) {
                 try {
