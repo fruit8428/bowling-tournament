@@ -174,6 +174,7 @@ class OcrService {
             });
         }
 
+        }
         const rawText = response.text || '';
         let cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);

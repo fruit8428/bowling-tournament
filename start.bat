@@ -15,5 +15,5 @@ echo 💡 提示: 按 Ctrl+C 可停止伺服器
 echo ====================================================
 
 start http://localhost:3000
-node server.js
+node src/server.js
 pause

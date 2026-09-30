@@ -2591,9 +2591,19 @@
                                     const d = sImgData.data;
                                     for (let j = 0; j < d.length; j += 4) {
                                         const r = d[j], g = d[j+1], b = d[j+2];
-                                        const lum = r * 0.299 + g * 0.587 + b * 0.114;
-                                        const v = lum < th ? 0 : 255;
-                                        d[j] = v; d[j+1] = v; d[j+2] = v;
+                                        
+                                        // 智慧筆跡/背景過濾 (同步後端 ocrService.js 邏輯)
+                                        const isPurple = (r > 80 && b > 80 && (r - g > 45) && (b - g > 45));
+                                        const isRed = (r - g > 50 && r - b > 40);
+                                        const isBlue = (b > 130 && b - r > 50 && b - g > 40);
+
+                                        if (isPurple || isRed || isBlue) {
+                                            d[j] = 255; d[j+1] = 255; d[j+2] = 255; // 濾除干擾色變白
+                                        } else {
+                                            const lum = r * 0.299 + g * 0.587 + b * 0.114;
+                                            const v = lum < th ? 0 : 255;
+                                            d[j] = v; d[j+1] = v; d[j+2] = v;
+                                        }
                                     }
                                     sCtx.putImageData(sImgData, 0, 0);
 

@@ -82,7 +82,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Serve static frontend files
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 if (!fs.existsSync(PUBLIC_DIR)) {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 }
@@ -90,7 +90,7 @@ app.use(express.static(PUBLIC_DIR));
 
 // Also serve the root directory for backward compatibility with bowling.html
 app.get('/bowling.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'bowling.html'));
+    res.sendFile(path.join(__dirname, '..', 'public', 'bowling.html'));
 });
 
 // Redirect root to public/index.html
@@ -99,7 +99,7 @@ app.get('/', (req, res) => {
     if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
     } else {
-        res.sendFile(path.join(__dirname, 'bowling.html'));
+        res.sendFile(path.join(__dirname, '..', 'public', 'bowling.html'));
     }
 });
 

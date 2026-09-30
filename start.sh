@@ -28,4 +28,4 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
 fi
 
 # 啟動 Node.js 伺服器
-node server.js
+node src/server.js

@@ -6,7 +6,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const DB_DIR = path.join(__dirname, 'data');
+const DB_DIR = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
 }
@@ -105,9 +105,9 @@ function seedSampleData() {
     const totalLanes = parseInt(getSetting('total_lanes') || '40', 10);
     const playersPerLane = parseInt(getSetting('players_per_lane') || '4', 10);
 
-    const yangFile = path.join(__dirname, '地區保齡球yang.xlsx');
-    const standardFile = path.join(__dirname, '地區保齡球參賽名單.xlsx');
-    const sampleFile = path.join(__dirname, 'sample_players.xlsx');
+    const yangFile = path.join(__dirname, '..', 'examples', '地區保齡球yang.xlsx');
+    const standardFile = path.join(__dirname, '..', 'examples', '地區保齡球參賽名單.xlsx');
+    const sampleFile = path.join(__dirname, '..', 'examples', 'sample_players.xlsx');
     const targetFile = fs.existsSync(yangFile) ? yangFile : (fs.existsSync(standardFile) ? standardFile : (fs.existsSync(sampleFile) ? sampleFile : null));
 
     if (targetFile) {
