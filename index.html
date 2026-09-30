@@ -1916,7 +1916,7 @@
         }
 
         function updatePlayerFieldLive(lane, pId, field, value) {
-            const player = lanesData[lane]?.find(p => p.id === pId);
+            const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 player[field] = value;
                 saveToLocalStorage();
@@ -1941,7 +1941,7 @@
         }
 
         function togglePlayerGender(lane, pId) {
-            const player = lanesData[lane]?.find(p => p.id === pId);
+            const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 player.gender = player.gender === '男' ? '女' : '男';
                 updatePlayerFieldLive(lane, pId, 'gender', player.gender);
@@ -1950,7 +1950,7 @@
         }
 
         function updatePlayerIdentity(lane, pId, identityVal) {
-            const player = lanesData[lane]?.find(p => p.id === pId);
+            const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 player.identity = identityVal;
                 updatePlayerFieldLive(lane, pId, 'identity', identityVal);
@@ -1966,7 +1966,7 @@
                 else if (num < 0) num = 0;
             }
 
-            const player = lanesData[lane]?.find(p => p.id === pId);
+            const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 player[field] = num;
                 saveToLocalStorage();
@@ -1993,7 +1993,7 @@
         }
 
         function adjustScore(lane, pId, field, diff) {
-            const player = lanesData[lane]?.find(p => p.id === pId);
+            const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 let cur = parseInt(player[field], 10) || 0;
                 let next = Math.max(0, Math.min(300, cur + diff));
@@ -2006,7 +2006,7 @@
         }
 
         function updatePlayerAwardLive(lane, pId, type, increment) {
-            const player = lanesData[lane]?.find(p => p.id === pId);
+            const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 let current = parseInt(player[type], 10) || 0;
                 let next = Math.max(0, current + increment);
@@ -2207,7 +2207,7 @@
   "description": "已精準辨識球道與 4 位選手完賽累積總分"
 }`;
 
-                        let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+                        let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -2223,6 +2223,25 @@
                                 }
                             })
                         });
+
+                        if (!res.ok) {
+                            res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    contents: [{
+                                        parts: [
+                                            { text: prompt },
+                                            { inline_data: { mime_type: mimeType, data: base64Data } }
+                                        ]
+                                    }],
+                                    generationConfig: {
+                                        temperature: 0.1,
+                                        responseMimeType: 'application/json'
+                                    }
+                                })
+                            });
+                        }
 
                         if (!res.ok) {
                             res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
@@ -2626,7 +2645,7 @@
                         const autoFlowers = (result.flowers && result.flowers[idx] !== undefined) ? result.flowers[idx] : (p.flowers || 0);
                         const autoCropUrl = (result.scoreCropUrls && result.scoreCropUrls[idx]) ? result.scoreCropUrls[idx] : '';
                         return {
-                            id: p.id,
+                            id: (p.id !== undefined && p.id !== null && p.id !== '') ? p.id : (idx + 1),
                             name: p.name || '',
                             title: p.title || '',
                             nickname: p.nickname || '',
@@ -2687,7 +2706,7 @@
 
             let playersHtml = '';
             (data.players || []).forEach((p, idx) => {
-                const pNum = p.id || (idx + 1);
+                const pNum = (p.id !== undefined && p.id !== null && p.id !== '') ? p.id : (idx + 1);
                 const nameDisplay = p.name ? p.name : (p.nickname ? p.nickname : `選手 P${pNum}`);
                 const tagTitle = p.title ? `<span class="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded font-black border border-amber-300">${p.title}</span>` : '';
                 const tagNick = p.nickname ? `<span class="text-xs font-bold text-slate-600">(${p.nickname})</span>` : '';
@@ -2958,7 +2977,7 @@
                 const newPlayers = (lanesData[targetLane] || []).map((p, idx) => {
                     const oldP = currentOcrData.players ? currentOcrData.players[idx] : null;
                     return {
-                        id: p.id,
+                        id: (p.id !== undefined && p.id !== null && p.id !== '') ? p.id : (idx + 1),
                         name: p.name || '',
                         title: p.title || '',
                         nickname: p.nickname || '',
@@ -3000,23 +3019,52 @@
             const playersToSave = [];
             (currentOcrData.players || []).forEach((p, idx) => {
                 const inputElem = document.getElementById(`ocr-score-p${idx}`);
-                const scoreVal = inputElem ? inputElem.value : p.score;
+                
+                // 多層級保底取分邏輯：優先取輸入框非空值，其次取 p.score，再次取 currentOcrData.scores[idx]
+                let scoreVal = '';
+                if (inputElem && inputElem.value !== '' && inputElem.value !== null && inputElem.value !== undefined) {
+                    scoreVal = String(inputElem.value).trim();
+                } else if (p.score !== undefined && p.score !== null && p.score !== '') {
+                    scoreVal = String(p.score).trim();
+                } else if (currentOcrData.scores && currentOcrData.scores[idx] !== undefined && currentOcrData.scores[idx] !== null && currentOcrData.scores[idx] !== '') {
+                    scoreVal = String(currentOcrData.scores[idx]).trim();
+                }
+
+                // 數值化轉換與範圍校驗 (0 ~ 300)
+                let cleanScore = '';
+                if (scoreVal !== '') {
+                    const parsedNum = parseInt(scoreVal, 10);
+                    if (!isNaN(parsedNum)) {
+                        cleanScore = Math.max(0, Math.min(300, parsedNum));
+                    }
+                }
+
+                // 嚴謹解析 ID (避開 0 || 1 導致第 1 位選手 ID 錯置問題)
+                const resolvedId = (p.id !== undefined && p.id !== null && p.id !== '') ? p.id : (idx + 1);
+
                 playersToSave.push({
-                    id: p.id || (idx + 1),
-                    score: scoreVal,
-                    turkeys: (p.turkeys !== undefined && p.turkeys !== null) ? p.turkeys : 0,
-                    flowers: (p.flowers !== undefined && p.flowers !== null) ? p.flowers : 0
+                    idx: idx,
+                    id: resolvedId,
+                    score: cleanScore,
+                    turkeys: (p.turkeys !== undefined && p.turkeys !== null) ? (parseInt(p.turkeys, 10) || 0) : 0,
+                    flowers: (p.flowers !== undefined && p.flowers !== null) ? (parseInt(p.flowers, 10) || 0) : 0
                 });
             });
 
             // 1. 本地 lanesData 即時更新 (包含成績、火雞次數、霸王花次數)
             if (lanesData[targetLane]) {
-                playersToSave.forEach(item => {
-                    const player = lanesData[targetLane].find(x => x.id === item.id);
+                playersToSave.forEach((item, idx) => {
+                    // 關鍵修正：優先依席位順序索引 idx (0 -> P1, 1 -> P2, 2 -> P3, 3 -> P4) 寫入
+                    // 若有 id 則輔助字串比對，徹底防止因 id 為 0、字串/數值型態差異或找錯選手導致 P1 成績遺失
+                    let player = lanesData[targetLane][idx];
+                    if (!player || (item.id !== undefined && player.id !== undefined && String(player.id) !== String(item.id))) {
+                        const found = lanesData[targetLane].find(x => String(x.id) === String(item.id));
+                        if (found) player = found;
+                    }
                     if (player) {
-                        player[gameField] = (item.score !== '' && item.score !== null && item.score !== undefined) ? parseInt(item.score, 10) : '';
-                        if (item.turkeys !== undefined) player.turkeys = parseInt(item.turkeys, 10) || 0;
-                        if (item.flowers !== undefined) player.flowers = parseInt(item.flowers, 10) || 0;
+                        player[gameField] = item.score;
+                        if (item.turkeys !== undefined) player.turkeys = item.turkeys;
+                        if (item.flowers !== undefined) player.flowers = item.flowers;
                     }
                 });
                 saveToLocalStorage();
@@ -4829,7 +4877,7 @@
         async function saveQuickScoreModal() {
             if (!currentEditingTarget || !currentEditingTarget.player) return;
             const { lane, pId } = currentEditingTarget;
-            const player = lanesData[lane]?.find(p => p.id === pId);
+            const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (!player) return;
 
             const parseVal = (val) => {

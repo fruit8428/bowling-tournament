@@ -107,7 +107,7 @@ class OcrService {
         let response;
         try {
             response = await ai.models.generateContent({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 contents: [
                     {
                         role: 'user',
@@ -127,9 +127,32 @@ class OcrService {
                     responseMimeType: 'application/json'
                 }
             });
-        } catch (e1) {
-            response = await ai.models.generateContent({
-                model: 'gemini-1.5-flash',
+        } catch (e0) {
+            try {
+                response = await ai.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [
+                                { text: prompt },
+                                {
+                                    inlineData: {
+                                        mimeType,
+                                        data: base64Image
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    config: {
+                        temperature: 0.1,
+                        responseMimeType: 'application/json'
+                    }
+                });
+            } catch (e1) {
+                response = await ai.models.generateContent({
+                    model: 'gemini-1.5-flash',
                 contents: [
                     {
                         role: 'user',
