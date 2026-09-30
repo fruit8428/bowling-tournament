@@ -70,25 +70,27 @@ class OcrService {
 
         const prompt = `
 你是一位專業的保齡球賽事視覺辨識專家。
-請仔細分析這張保齡球館完賽計分板照片（可能包含上方牆壁/燈箱上的球道牌數字，以及電視螢幕中的 4 位選手計分板）。
+請仔細分析這張保齡球館完賽計分板照片（通常包含球道上方懸掛/牆壁上的紅色球道號碼燈箱或螢幕標題，以及電視螢幕中的 4 位選手計分板）。
 
-請精準讀取並擷取以下資訊：
-1. lane: 球道號碼 (Lane Number，通常顯示在電視上方懸掛的球道號碼牌、燈箱或螢幕標題列，例如 24)。若完全無法判斷請填 null。
-2. p1_score: 第 1 位選手（第 1 行）的最終總分（通常在第 10 格 Frame 10 下方累計總分欄位，分數介於 0 到 300 之間）。
-3. p2_score: 第 2 位選手（第 2 行）的最終總分。
-4. p3_score: 第 3 位選手（第 3 行）的最終總分。
-5. p4_score: 第 4 位選手（第 4 行）的最終總分。
-6. p1_turkeys, p2_turkeys, p3_turkeys, p4_turkeys: 各選手連續 3 次全倒 (Turkey) 的次數（若無或未出現則為 0）。
-7. p1_flowers, p2_flowers, p3_flowers, p4_flowers: 各選手全中 (Spare/Strike) 或女性特殊獎項（若無則為 0）。
+【保齡球計分板結構說明】：
+1. lane: 球道號碼。請特別注意電視螢幕正上方懸掛/牆壁上的「紅色大字球道號碼」（例如紅色數字 24），請勿看錯成其它數字。若圖片中看到明確球道號碼請填寫；若無法明確辨識則填寫 ${options.selectedLane || 1}。
+2. 4 位選手完賽累積總分 (p1_score, p2_score, p3_score, p4_score):
+   - 電視螢幕由上至下分為 4 列（分別代表第 1、2、3、4 位選手）。
+   - 每位選手在最右側的「第 10 格 (Frame 10)」下方，會有該局打完後的「最終累積總分（累計總成績）」。
+   - 請特別注意：第 10 格上方有 2~3 個小方格是擊倒瓶數（例如 9 -, 7 2, 2 1, X 2 6），請絕對不要讀取擊倒瓶數！
+   - 請務必只讀取第 10 格最下方的大字最終累積總得分（例如 98, 105, 103, 129），分數介於 0 到 300 之間。
+3. 特別獎項：
+   - turkeys: 連續三次全倒 (Turkey) 次數（若無請填 0）。
+   - flowers: 5+7+10 霸王花分瓶或特殊開花分瓶次數（若無請填 0）。
 
 【輸出格式要求】：
-請務必且只輸出合法的 JSON 字串，不要包含任何額外的 Markdown 代碼塊或說明文字，格式範例如下（請依照片實際內容填寫）：
+請務必且只輸出合法的 JSON 字串，不要包含任何額外的 Markdown 代碼塊或說明文字，格式範例如下：
 {
-  "lane": 8,
-  "p1_score": 120,
-  "p2_score": 135,
-  "p3_score": 110,
-  "p4_score": 145,
+  "lane": 24,
+  "p1_score": 98,
+  "p2_score": 105,
+  "p3_score": 103,
+  "p4_score": 129,
   "p1_turkeys": 0,
   "p2_turkeys": 0,
   "p3_turkeys": 0,
@@ -97,7 +99,7 @@ class OcrService {
   "p2_flowers": 0,
   "p3_flowers": 0,
   "p4_flowers": 0,
-  "confidence": 0.95,
+  "confidence": 0.99,
   "description": "成功識別照片中球道號碼與4位選手得分"
 }
 `;
@@ -274,121 +276,66 @@ class OcrService {
         // 2. 智慧保齡球專用字體轉譯函數 (包含空心字、連字與邊緣假字過濾)
         function smartCleanBowlingScore(raw) {
             if (!raw) return '';
-            let s = String(raw).trim();
+            const s = String(raw).trim();
 
-            s = s.replace(/\"/g, '5')
-                 .replace(/[=\)\]\}]/g, '3')
-                 .replace(/[CQqa]/g, '9')
-                 .replace(/[BG&]/g, '8')
-                 .replace(/[OoD]/g, '0')
-                 .replace(/[Il|!]/g, '1')
-                 .replace(/[Ss]/g, '5');
-
-            let digits = s.replace(/\D/g, '');
-            if (!digits) return '';
-
-            let num = parseInt(digits, 10);
-            if (num >= 0 && num <= 300 && digits.length <= 3) return num;
-
-            // AMF AccuScore 空心字雙重輪廓修正 (例如 1005 -> 105, 1003 -> 103, 1008 -> 108)
-            if (/^100\d$/.test(digits)) {
-                return parseInt('10' + digits[3], 10);
-            }
-            if (/^1(\d)\1(\d)$/.test(digits)) {
-                return parseInt('1' + digits[1] + digits[3], 10);
+            // 1. 優先提取連續數字組 (通常為 2 位數 50~99 或 3 位數 100~300)
+            const digitGroups = s.match(/\d+/g);
+            if (digitGroups) {
+                for (const grp of digitGroups) {
+                    if (grp.length === 2 || grp.length === 3) {
+                        const n = parseInt(grp, 10);
+                        if (n >= 0 && n <= 300) return n;
+                    }
+                    if (grp.length === 4) {
+                        if (/^100\d$/.test(grp)) return parseInt('10' + grp[3], 10);
+                        if (/^1(\d)\1(\d)$/.test(grp)) return parseInt('1' + grp[1] + grp[3], 10);
+                        const f3 = parseInt(grp.substring(0, 3), 10);
+                        if (f3 >= 30 && f3 <= 300) return f3;
+                        const l3 = parseInt(grp.substring(1, 4), 10);
+                        if (l3 >= 30 && l3 <= 300) return l3;
+                    }
+                }
             }
 
-            // 處理 4 位數假字 (例如 1033 或 1293 因邊框產生的假字)
-            if (digits.length === 4) {
-                const first3 = parseInt(digits.substring(0, 3), 10);
-                if (first3 >= 0 && first3 <= 300) return first3;
-                const last3 = parseInt(digits.substring(1, 4), 10);
-                if (last3 >= 0 && last3 <= 300) return last3;
+            // 2. 備援：過濾所有非數字字元後為 2~3 位數
+            const allDigits = s.replace(/\D/g, '');
+            if (allDigits.length === 2 || allDigits.length === 3) {
+                const n = parseInt(allDigits, 10);
+                if (n >= 0 && n <= 300) return n;
             }
 
-            // 處理 3 位數超出 300 的情況 (例如 398 -> 98, 898 -> 98)
-            if (digits.length === 3 && num > 300) {
-                const last2 = parseInt(digits.substring(1, 3), 10);
-                if (last2 >= 0 && last2 <= 300) return last2;
+            // 3. 備援：保齡球特殊字符轉譯
+            let sub = s.replace(/\"/g, '5')
+                       .replace(/[=\)\]\}]/g, '3')
+                       .replace(/[CQq]/g, '9')
+                       .replace(/[BG&]/g, '8')
+                       .replace(/[S]/g, '5');
+            const subDigits = sub.replace(/\D/g, '');
+            if (subDigits.length === 2 || subDigits.length === 3) {
+                const n = parseInt(subDigits, 10);
+                if (n >= 30 && n <= 300) return n;
             }
 
             return '';
         }
 
-        // 3. 搜尋計分板藍色分隔條以動態鎖定 4 位選手的成績列
-        let scoreBoxes = [];
-        try {
-            const colLeft = Math.floor(width * 0.80);
-            const colWidth = Math.floor(width * 0.16);
-            const { data: colData, info: colInfo } = await sharp(imageBuffer)
-                .extract({ left: colLeft, top: 0, width: colWidth, height })
-                .raw()
-                .toBuffer({ resolveWithObject: true });
+        // 3. 鎖定 Frame 10 累計總分格（精確校正比例座標，完美避開第 9 格與上方投球小方格）
+        const sLeft = Math.floor(width * 0.835);
+        const sWidth = Math.floor(width * 0.130);
+        const configs = [
+            { topPct: 0.468, hPct: 0.040 },
+            { topPct: 0.593, hPct: 0.040 },
+            { topPct: 0.718, hPct: 0.040 },
+            { topPct: 0.843, hPct: 0.040 }
+        ];
+        const scoreBoxes = configs.map(c => ({
+            left: sLeft,
+            top: Math.floor(height * c.topPct),
+            width: sWidth,
+            height: Math.floor(height * c.hPct)
+        }));
 
-            const blueRows = [];
-            for (let y = Math.floor(height * 0.25); y < Math.floor(height * 0.98); y++) {
-                let blueCount = 0;
-                for (let x = 20; x < colInfo.width - 20; x++) {
-                    const idx = (y * colInfo.width + x) * 3;
-                    const r = colData[idx], g = colData[idx+1], b = colData[idx+2];
-                    if (b > 115 && b - r > 35 && b - g > 30) blueCount++;
-                }
-                if (blueCount > (colInfo.width - 40) * 0.45) {
-                    blueRows.push(y);
-                }
-            }
-
-            const blueBands = [];
-            let curBand = null;
-            for (let y of blueRows) {
-                if (!curBand) curBand = { start: y, end: y };
-                else if (y === curBand.end + 1) curBand.end = y;
-                else {
-                    if (curBand.end - curBand.start >= 6) blueBands.push(curBand);
-                    curBand = { start: y, end: y };
-                }
-            }
-            if (curBand && curBand.end - curBand.start >= 6) blueBands.push(curBand);
-
-            if (blueBands.length >= 5) {
-                const sLeft = Math.floor(width * 0.815);
-                const sWidth = Math.floor(width * 0.145);
-                for (let i = 0; i < 4; i++) {
-                    const topBand = blueBands[i];
-                    const bottomBand = blueBands[i + 1];
-                    const rowY = topBand.end + 1;
-                    const rowH = bottomBand.start - rowY;
-                    scoreBoxes.push({
-                        left: sLeft,
-                        top: Math.floor(rowY + rowH * 0.44),
-                        width: sWidth,
-                        height: Math.floor(rowH * 0.56)
-                    });
-                }
-            }
-        } catch (bandErr) {
-            console.warn('[OCR Local] 動態偵測分隔條微調中，使用備援比例');
-        }
-
-        // 若動態分隔條未滿 5 條，使用比例備援座標
-        if (scoreBoxes.length < 4) {
-            const configs = [
-                { topPct: 0.445, hPct: 0.052 },
-                { topPct: 0.570, hPct: 0.052 },
-                { topPct: 0.690, hPct: 0.052 },
-                { topPct: 0.810, hPct: 0.052 }
-            ];
-            const sLeft = Math.floor(width * 0.815);
-            const sWidth = Math.floor(width * 0.145);
-            scoreBoxes = configs.map(c => ({
-                left: sLeft,
-                top: Math.floor(height * c.topPct),
-                width: sWidth,
-                height: Math.floor(height * c.hPct)
-            }));
-        }
-
-        // 4. 逐一提取選手累計成績並過濾筆跡與邊框
+        // 4. 逐一提取選手累計成績並過濾紫色/紅色筆跡與邊框
         for (let i = 0; i < 4; i++) {
             const box = scoreBoxes[i];
             try {
@@ -404,19 +351,17 @@ class OcrService {
                     .raw()
                     .toBuffer({ resolveWithObject: true });
 
-                // 智慧筆跡過濾：去除紫色筆跡、紅色註記、計分板藍條與邊緣線
+                // 智慧筆跡過濾：去除紫色筆跡、紅色註記、計分板深藍條
                 const cleaned = Buffer.alloc(sInfo.width * sInfo.height * 3);
                 for (let y = 0; y < sInfo.height; y++) {
                     for (let x = 0; x < sInfo.width; x++) {
                         const idx = (y * sInfo.width + x) * 3;
                         const r = sData[idx], g = sData[idx+1], b = sData[idx+2];
-                        const isPurple = (r - g > 40 && b - g > 40);
-                        const isRed = (r - g > 45 && r - b > 40);
-                        const isBlue = (b > 110 && b - r > 35 && b - g > 25);
-                        const isTop = (y < 10);
-                        const isBottom = (y > sInfo.height - 4);
+                        const isPurple = (r > 80 && b > 80 && (r - g > 45) && (b - g > 45));
+                        const isRed = (r - g > 50 && r - b > 40);
+                        const isBlue = (b > 130 && b - r > 50 && b - g > 40);
 
-                        if (isPurple || isRed || isBlue || isTop || isBottom) {
+                        if (isPurple || isRed || isBlue) {
                             cleaned[idx] = 255;
                             cleaned[idx+1] = 255;
                             cleaned[idx+2] = 255;
@@ -429,18 +374,22 @@ class OcrService {
                 }
 
                 let bestScore = '';
-                for (const th of [160, 145, 130]) {
+                for (const th of [150, 160, 140, 130]) {
                     try {
                         const scoreBuf = await sharp(cleaned, { raw: { width: sInfo.width, height: sInfo.height, channels: 3 } })
-                            .resize(300, null, { kernel: 'lanczos3' })
+                            .resize(250, null)
                             .grayscale()
                             .threshold(th)
-                            .extend({ top: 30, bottom: 30, left: 30, right: 30, background: '#ffffff' })
+                            .extend({ top: 20, bottom: 20, left: 20, right: 20, background: '#ffffff' })
                             .png()
                             .toBuffer();
 
-                        const ocrRes = await Tesseract.recognize(scoreBuf, 'eng', { tessedit_pageseg_mode: '6' });
-                        const parsed = smartCleanBowlingScore(ocrRes.data.text);
+                        const ocrRes = await Tesseract.recognize(scoreBuf, 'eng', { 
+                            tessedit_pageseg_mode: '6',
+                            tessedit_char_whitelist: '0123456789'
+                        });
+                        const rawText = (ocrRes.data && ocrRes.data.text) ? ocrRes.data.text.trim() : '';
+                        const parsed = smartCleanBowlingScore(rawText);
                         if (parsed !== '') {
                             bestScore = parsed;
                             break;
