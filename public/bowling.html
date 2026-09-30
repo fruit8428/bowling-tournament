@@ -709,6 +709,19 @@
                             broadcastCloudEvent('request_sync', { clientId: myClientId });
                         }
                     });
+
+                    // 自動補發斷線期間累積的變更事件
+                    if (typeof pendingBroadcasts !== 'undefined' && pendingBroadcasts.length > 0) {
+                        console.log(`📡 正在補發斷線期間之 ${pendingBroadcasts.length} 筆同步事件...`);
+                        while (pendingBroadcasts.length > 0) {
+                            const pendingMsg = pendingBroadcasts.shift();
+                            try {
+                                cloudMqtt.publish(topic, JSON.stringify(pendingMsg));
+                            } catch (err) {
+                                console.warn('補發失敗:', err);
+                            }
+                        }
+                    }
                 });
 
                 cloudMqtt.on('message', (topic, message) => {
@@ -735,19 +748,30 @@
             }
         }
 
+        let pendingBroadcasts = [];
+
         function broadcastCloudEvent(type, data = {}) {
-            if (!cloudMqtt || !cloudMqtt.connected) return;
-            try {
-                const message = {
-                    type: type,
-                    senderId: myClientId,
-                    timestamp: Date.now(),
-                    ...data
-                };
-                const topic = `bowling_tournament_v1/${cloudRoomId}/events`;
-                cloudMqtt.publish(topic, JSON.stringify(message));
-            } catch (e) {
-                console.warn('廣播事件失敗:', e);
+            const message = {
+                type: type,
+                senderId: myClientId,
+                timestamp: Date.now(),
+                ...data
+            };
+            const topic = `bowling_tournament_v1/${cloudRoomId}/events`;
+
+            if (cloudMqtt && cloudMqtt.connected) {
+                try {
+                    cloudMqtt.publish(topic, JSON.stringify(message));
+                } catch (e) {
+                    console.warn('廣播事件失敗:', e);
+                    pendingBroadcasts.push(message);
+                }
+            } else {
+                console.warn('雲端尚未連線，將事件暫存於待發送佇列:', type);
+                pendingBroadcasts.push(message);
+                if (typeof initCloudSync === 'function' && !cloudMqtt) {
+                    initCloudSync();
+                }
             }
         }
 
@@ -1369,19 +1393,29 @@
 
         function updateConnectionBadge() {
             const el = document.getElementById('conn-status-badge');
-            if (!el) return;
-            if (isConnectedToServer || isCloudConnected) {
-                const connType = isConnectedToServer ? '📡 區網主機同步中' : `☁️ 雲端全場同步中 [${cloudRoomId}]`;
-                el.innerHTML = `
-                    <button onclick="openSyncSettingsModal()" title="點擊檢視連線狀態或切換房間" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 shadow-sm transition-all active:scale-95 cursor-pointer">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> ${connType} ⚙️
-                    </button>
-                `;
-            } else {
-                el.innerHTML = `
-                    <button onclick="openSyncSettingsModal()" title="點擊檢視連線狀態或切換房間" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 shadow-sm transition-all active:scale-95 cursor-pointer">
-                        <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> ⚠️ 單機離線 (點此連線/切換房間)
-                    </button>
+            if (el) {
+                if (isConnectedToServer || isCloudConnected) {
+                    const connType = isConnectedToServer ? '📡 區網主機同步中' : `☁️ 雲端全場同步中 [${cloudRoomId}]`;
+                    el.innerHTML = `
+                        <button onclick="openSyncSettingsModal()" title="點擊檢視連線狀態或切換房間" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 shadow-sm transition-all active:scale-95 cursor-pointer">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> ${connType} ⚙️
+                        </button>
+                    `;
+                } else {
+                    el.innerHTML = `
+                        <button onclick="openSyncSettingsModal()" title="點擊檢視連線狀態或切換房間" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 shadow-sm transition-all active:scale-95 cursor-pointer">
+                            <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> ⚠️ 單機離線 (點此連線/切換房間)
+                        </button>
+                    `;
+                }
+            }
+            const skConn = document.getElementById('sk-conn-status');
+            if (skConn) {
+                const isOnline = isConnectedToServer || isCloudConnected;
+                const connText = isConnectedToServer ? '📡 區網同步中' : (isCloudConnected ? `☁️ 雲端同步中 [${cloudRoomId}]` : '⚠️ 本地離線暫存模式');
+                skConn.innerHTML = `
+                    <span class="w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-300 animate-ping' : 'bg-amber-300'}"></span>
+                    ${connText}
                 `;
             }
         }
@@ -1567,9 +1601,9 @@
                             <h1 class="text-lg font-black tracking-wide flex items-center justify-center gap-1.5">
                                 <span>📱 記分員登錄端</span>
                             </h1>
-                            <div class="text-[11px] text-blue-100 font-bold flex items-center justify-center gap-1">
-                                <span class="w-1.5 h-1.5 rounded-full ${isConnectedToServer ? 'bg-emerald-300 animate-ping' : 'bg-amber-300'}"></span>
-                                ${isConnectedToServer ? '即時同步連線中' : '本地離線暫存模式'}
+                            <div class="text-[11px] text-blue-100 font-bold flex items-center justify-center gap-1" id="sk-conn-status">
+                                <span class="w-1.5 h-1.5 rounded-full ${isConnectedToServer || isCloudConnected ? 'bg-emerald-300 animate-ping' : 'bg-amber-300'}"></span>
+                                ${isConnectedToServer ? '📡 區網同步中' : (isCloudConnected ? `☁️ 雲端同步中 [${cloudRoomId}]` : '⚠️ 本地離線暫存模式')}
                             </div>
                         </div>
                         <div class="flex items-center gap-1.5">
@@ -2109,7 +2143,7 @@
   "description": "Gemini AI 成功辨識成績"
 }`;
 
-                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+                        let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -2125,6 +2159,25 @@
                                 }
                             })
                         });
+
+                        if (!res.ok) {
+                            res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    contents: [{
+                                        parts: [
+                                            { text: prompt },
+                                            { inline_data: { mime_type: mimeType, data: base64Data } }
+                                        ]
+                                    }],
+                                    generationConfig: {
+                                        temperature: 0.1,
+                                        responseMimeType: 'application/json'
+                                    }
+                                })
+                            });
+                        }
 
                         if (!res.ok) {
                             const errText = await res.text();
@@ -2843,6 +2896,10 @@
             if (modal) modal.classList.add('hidden');
         }
 
+        function showSkNotification(message, type = 'success') {
+            showToast(message, type);
+        }
+
         async function confirmAndSaveOcrScores() {
             if (!currentOcrData) return;
 
@@ -2857,8 +2914,8 @@
                 playersToSave.push({
                     id: p.id || (idx + 1),
                     score: scoreVal,
-                    turkeys: p.turkeys || 0,
-                    flowers: p.flowers || 0
+                    turkeys: (p.turkeys !== undefined && p.turkeys !== null) ? p.turkeys : 0,
+                    flowers: (p.flowers !== undefined && p.flowers !== null) ? p.flowers : 0
                 });
             });
 
@@ -2873,27 +2930,37 @@
                     }
                 });
                 saveToLocalStorage();
+                window.dispatchEvent(new Event('storage'));
                 renderScorekeeperPlayers();
-                renderAdminLanes();
+                if (currentView === 'admin' && typeof renderAdminStats === 'function') {
+                    renderAdminStats();
+                }
             }
 
-            // 2. 伺服器批次存檔 API 呼叫 (若有伺服器連線)
-            try {
-                const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
-                await fetch(`${apiBase}/api/scorekeeper/batch-save-scores`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        lane: targetLane,
-                        game,
-                        players: playersToSave
-                    })
+            // 2. 本地 Socket.IO / REST 存檔 (若有伺服器連線)
+            if (socket && socket.connected) {
+                socket.emit('lane:save_scores', {
+                    lane: targetLane,
+                    players: lanesData[targetLane],
+                    game: game
                 });
-            } catch (e) {
-                console.warn('離線或伺服器未連線，已儲存於本機');
+            } else {
+                try {
+                    const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
+                    fetch(`${apiBase}/api/lane/batch-update`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lane: targetLane,
+                            players: lanesData[targetLane]
+                        })
+                    }).catch(() => {});
+                } catch (e) {
+                    console.warn('離線或伺服器未連線，已儲存於本機');
+                }
             }
 
-            // 3. 雲端跨網即時廣播
+            // 3. 雲端跨網即時廣播 (MQTT over SSL 全場大螢幕與記分員同步)
             broadcastCloudEvent('lane_updated', {
                 lane: parseInt(targetLane, 10),
                 players: lanesData[targetLane],
@@ -2905,7 +2972,7 @@
             skSelectedGame = String(game);
             renderCurrentView();
 
-            showSkNotification(`✅ 第 ${targetLane} 球道第 ${game} 局成績與特別獎項已成功儲存！`, 'success');
+            showToast(`✅ 第 ${targetLane} 球道第 ${game} 局成績辨識登錄成功！全場已即時同步`, 'success');
         }
 
         // ==========================================
@@ -4841,10 +4908,32 @@
                 setTimeout(() => {
                     toast.classList.remove('opacity-100', 'translate-y-0');
                     toast.classList.add('opacity-0', '-translate-y-4');
-                }, 2500);
-            } else {
-                console.log(`[Toast ${type}]`, message);
+                }, 3000);
+                return;
             }
+
+            // 若當前畫面無固定 toast 元素 (如大會即時總表大看板)，建立全域頂端浮動通知
+            let globalToast = document.getElementById('global-floating-toast');
+            if (!globalToast) {
+                globalToast = document.createElement('div');
+                globalToast.id = 'global-floating-toast';
+                document.body.appendChild(globalToast);
+            }
+            const bgClass = type === 'error' ? 'bg-rose-600 text-white border-rose-400' : (type === 'info' ? 'bg-blue-600 text-white border-blue-400' : 'bg-emerald-600 text-white border-emerald-400');
+            const icon = type === 'error' ? '⚠️' : (type === 'info' ? '📡' : '✅');
+            globalToast.className = `fixed top-5 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl font-black text-sm shadow-2xl transition-all duration-300 pointer-events-none flex items-center gap-2 border ${bgClass}`;
+            globalToast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+            
+            requestAnimationFrame(() => {
+                globalToast.classList.remove('-translate-y-4', 'opacity-0');
+                globalToast.classList.add('translate-y-0', 'opacity-100');
+            });
+
+            if (globalToast._timeout) clearTimeout(globalToast._timeout);
+            globalToast._timeout = setTimeout(() => {
+                globalToast.classList.remove('translate-y-0', 'opacity-100');
+                globalToast.classList.add('-translate-y-4', 'opacity-0');
+            }, 3000);
         }
 
         let broadcastTimeout = null;
