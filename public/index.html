@@ -2812,6 +2812,16 @@
                     };
 
                     renderOcrResultModal(currentOcrData, currentOcrPhotoUrl);
+
+                    // 自動儲存與匯出
+                    confirmAndSaveOcrScores().then(() => {
+                        const modal = document.getElementById('ocr-modal');
+                        if (modal) modal.classList.add('hidden');
+                        showToast('自動辨識成功！成績已登錄，並下載最新大會成績總表', 'success');
+                        setTimeout(() => {
+                            window.open('/api/export/excel', '_blank');
+                        }, 500);
+                    });
                 } else {
                     throw new Error('無法讀取照片內容，請確認拍攝清晰');
                 }
