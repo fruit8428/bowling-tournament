@@ -321,13 +321,6 @@ app.post('/api/player/field', async (req, res) => {
         }
         const updatedPlayers = await db.updatePlayerField(parseInt(lane, 10), parseInt(playerOrder, 10), field, value);
         
-        // Broadcast change in real-time
-            lane: parseInt(lane, 10),
-            players: updatedPlayers,
-            updatedField: { playerOrder, field, value },
-            timestamp: Date.now()
-        });
-
         res.json({ ok: true, lane, players: updatedPlayers });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -343,12 +336,6 @@ app.post('/api/player/update', async (req, res) => {
         }
         const updatedPlayers = await db.updatePlayer(parseInt(lane, 10), parseInt(playerOrder, 10), data);
         
-        // Broadcast change in real-time
-            lane: parseInt(lane, 10),
-            players: updatedPlayers,
-            timestamp: Date.now()
-        });
-
         res.json({ ok: true, lane, players: updatedPlayers });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -444,14 +431,6 @@ app.post('/api/scorekeeper/batch-save-scores', async (req, res) => {
 
         const updatedPlayers = await db.batchSaveGameScores(laneNum, gameNum, players);
 
-        // Broadcast real-time update to all live boards
-            lane: laneNum,
-            players: updatedPlayers,
-            game: gameNum,
-            action: 'batch_photo_scores_saved',
-            timestamp: Date.now()
-        });
-
         res.json({
             ok: true,
             message: `第 ${laneNum} 球道第 ${gameNum} 局 4 位選手成績已成功登錄！`,
@@ -473,12 +452,6 @@ app.post('/api/lane/batch-update', async (req, res) => {
             return res.status(400).json({ ok: false, error: 'Invalid lane or players payload' });
         }
         const updatedPlayers = await db.batchUpdateLane(parseInt(lane, 10), players);
-
-        // Broadcast change in real-time
-            lane: parseInt(lane, 10),
-            players: updatedPlayers,
-            timestamp: Date.now()
-        });
 
         res.json({ ok: true, lane, players: updatedPlayers });
     } catch (err) {
@@ -525,9 +498,7 @@ app.post('/api/reset', async (req, res) => {
     try {
         const mode = req.body.mode || 'seed'; // 'seed' (reseed full sample) or 'clear_scores'
         const lanesData = await db.resetAllData(mode);
-            data: lanesData,
-            message: mode === 'clear_scores' ? '分數已重置為空' : '已重新載入預設示範名冊'
-        });
+            
         res.json({ ok: true, message: 'Reset successful', data: lanesData });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -579,9 +550,7 @@ app.post('/api/import/excel', upload.single('file'), async (req, res) => {
         }
 
         const result = await db.importRoster(rows);
-            data: result.data,
-            message: `成功匯入 ${result.count} 位選手名單`
-        });
+            
 
         res.json({ ok: true, message: `成功匯入 ${result.count} 位選手`, count: result.count });
     } catch (err) {
@@ -605,58 +574,6 @@ app.post('/api/broadcast', async (req, res) => {
 // ==========================================
 // Socket.IO Real-Time Engine
 // ==========================================
-io.on('connection', async (socket) => {
-    console.log(`[Socket.IO] Client connected: ${socket.id}`);
-
-    // Send initial snapshot
-        data: await db.getAllLanes(),
-        settings: await db.getSettings(),
-        stats: await db.getStats()
-    });
-
-    // Scorekeeper updates a specific field live
-    socket.on('player:field_change', async (payload) => {
-        try {
-            const { lane, playerOrder, field, value } = payload;
-            const updatedPlayers = await db.updatePlayerField(parseInt(lane, 10), parseInt(playerOrder, 10), field, value);
-            // Broadcast to all other clients
-            socket.broadcast.emit('lane_updated', {
-                lane: parseInt(lane, 10),
-                players: updatedPlayers,
-                updatedField: { playerOrder, field, value },
-                from: socket.id
-            });
-        } catch (err) {
-            console.error('[Socket.IO Error] player:field_change:', err);
-        }
-    });
-
-    // Scorekeeper saves an entire lane/game
-    socket.on('lane:save_scores', async (payload) => {
-        try {
-            const { lane, players, game } = payload;
-            const updatedPlayers = await db.batchUpdateLane(parseInt(lane, 10), players);
-            // Broadcast to everyone including sender
-                lane: parseInt(lane, 10),
-                players: updatedPlayers,
-                game,
-                saved: true,
-                from: socket.id
-            });
-        } catch (err) {
-            console.error('[Socket.IO Error] lane:save_scores:', err);
-        }
-    });
-
-    // Client requests stats refresh
-    socket.on('request_stats', async () => {
-    });
-
-    socket.on('disconnect', async () => {
-        console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
-    });
-});
-
 // Start server
 if (process.env.VERCEL !== '1') {
 server.listen(PORT, '0.0.0.0', () => {
