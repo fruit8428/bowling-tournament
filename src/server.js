@@ -89,12 +89,12 @@ if (!fs.existsSync(PUBLIC_DIR)) {
 app.use(express.static(PUBLIC_DIR));
 
 // Also serve the root directory for backward compatibility with bowling.html
-app.get('/bowling.html', (req, res) => {
+app.get('/bowling.html', async (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'bowling.html'));
 });
 
 // Redirect root to public/index.html
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
     const indexPath = path.join(PUBLIC_DIR, 'index.html');
     if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
@@ -108,10 +108,10 @@ app.get('/', (req, res) => {
 // ==========================================
 
 // 1. System Status & Stats
-app.get('/api/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
     try {
-        const settings = db.getSettings();
-        const stats = db.getStats();
+        const settings = await db.getSettings();
+        const stats = await db.getStats();
         const localIp = getLocalIpAddress();
         const allIps = getAllLocalIpAddresses();
         res.json({
@@ -132,7 +132,7 @@ app.get('/api/status', (req, res) => {
 });
 
 // 1.1 Network IPs List
-app.get('/api/network-ips', (req, res) => {
+app.get('/api/network-ips', async (req, res) => {
     try {
         const localIp = getLocalIpAddress();
         const ips = getAllLocalIpAddresses();
@@ -183,9 +183,9 @@ app.get('/api/qrcode', async (req, res) => {
 // 1.3 Batch QR Code Data for all 40 lanes
 app.get('/api/qrcode/batch', async (req, res) => {
     try {
-        const totalLanes = parseInt(db.getSetting('total_lanes') || '40', 10);
+        const totalLanes = parseInt(await db.getSetting('total_lanes') || '40', 10);
         const hostIp = req.query.ip || getLocalIpAddress();
-        const pwd = req.query.pwd || db.getSetting('scorekeeper_password') || '2222';
+        const pwd = req.query.pwd || await db.getSetting('scorekeeper_password') || '2222';
         const list = [];
 
         for (let lane = 1; lane <= totalLanes; lane++) {
@@ -206,10 +206,10 @@ app.get('/api/qrcode/batch', async (req, res) => {
 // 1.4 Printable 40 Lanes QR Code Stickers Page
 app.get('/print-lanes-qr', async (req, res) => {
     try {
-        const totalLanes = parseInt(db.getSetting('total_lanes') || '40', 10);
-        const eventName = db.getSetting('event_name') || '保齡球賽事';
+        const totalLanes = parseInt(await db.getSetting('total_lanes') || '40', 10);
+        const eventName = await db.getSetting('event_name') || '保齡球賽事';
         const hostIp = req.query.ip || getLocalIpAddress();
-        const pwd = req.query.pwd || db.getSetting('scorekeeper_password') || '2222';
+        const pwd = req.query.pwd || await db.getSetting('scorekeeper_password') || '2222';
         
         let cardsHtml = '';
         for (let lane = 1; lane <= totalLanes; lane++) {
@@ -288,10 +288,10 @@ app.get('/print-lanes-qr', async (req, res) => {
 });
 
 // 2. Get All Lanes Data
-app.get('/api/lanes', (req, res) => {
+app.get('/api/lanes', async (req, res) => {
     try {
-        const lanesData = db.getAllLanes();
-        const settings = db.getSettings();
+        const lanesData = await db.getAllLanes();
+        const settings = await db.getSettings();
         res.json({ ok: true, data: lanesData, settings });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -299,13 +299,13 @@ app.get('/api/lanes', (req, res) => {
 });
 
 // 3. Get Single Lane Data
-app.get('/api/lanes/:lane', (req, res) => {
+app.get('/api/lanes/:lane', async (req, res) => {
     try {
         const lane = parseInt(req.params.lane, 10);
         if (isNaN(lane)) {
             return res.status(400).json({ ok: false, error: 'Invalid lane number' });
         }
-        const players = db.getLanePlayers(lane);
+        const players = await db.getLanePlayers(lane);
         res.json({ ok: true, lane, players });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -313,13 +313,13 @@ app.get('/api/lanes/:lane', (req, res) => {
 });
 
 // 4. Update a single field of a player
-app.post('/api/player/field', (req, res) => {
+app.post('/api/player/field', async (req, res) => {
     try {
         const { lane, playerOrder, field, value } = req.body;
         if (!lane || !playerOrder || !field) {
             return res.status(400).json({ ok: false, error: 'Missing required parameters' });
         }
-        const updatedPlayers = db.updatePlayerField(parseInt(lane, 10), parseInt(playerOrder, 10), field, value);
+        const updatedPlayers = await db.updatePlayerField(parseInt(lane, 10), parseInt(playerOrder, 10), field, value);
         
         // Broadcast change in real-time
         io.emit('lane_updated', {
@@ -336,13 +336,13 @@ app.post('/api/player/field', (req, res) => {
 });
 
 // 5. Update full player record
-app.post('/api/player/update', (req, res) => {
+app.post('/api/player/update', async (req, res) => {
     try {
         const { lane, playerOrder, data } = req.body;
         if (!lane || !playerOrder || !data) {
             return res.status(400).json({ ok: false, error: 'Missing required parameters' });
         }
-        const updatedPlayers = db.updatePlayer(parseInt(lane, 10), parseInt(playerOrder, 10), data);
+        const updatedPlayers = await db.updatePlayer(parseInt(lane, 10), parseInt(playerOrder, 10), data);
         
         // Broadcast change in real-time
         io.emit('lane_updated', {
@@ -375,7 +375,7 @@ app.post('/api/scorekeeper/recognize-photo', upload.single('photo'), async (req,
         const selectedLane = parseInt(req.body.lane || req.query.lane, 10) || 1;
         const selectedGame = parseInt(req.body.game || req.query.game, 10) || 1;
 
-        const settings = db.getSettings();
+        const settings = await db.getSettings();
         const apiKey = req.body.apiKey || settings.gemini_api_key || process.env.GEMINI_API_KEY;
 
         const result = await ocrService.recognizeScoreboard(imageBuffer, {
@@ -385,7 +385,7 @@ app.post('/api/scorekeeper/recognize-photo', upload.single('photo'), async (req,
         });
 
         const targetLane = result.detectedLane || selectedLane;
-        const currentPlayers = db.getLanePlayers(targetLane);
+        const currentPlayers = await db.getLanePlayers(targetLane);
 
         const players = currentPlayers.map((p, idx) => {
             const detectedScore = result.scores && result.scores[idx] !== undefined ? result.scores[idx] : '';
@@ -427,7 +427,7 @@ app.post('/api/scorekeeper/recognize-photo', upload.single('photo'), async (req,
 });
 
 // 5.2 Batch Save Game Scores (from Photo OCR or scorekeeper)
-app.post('/api/scorekeeper/batch-save-scores', (req, res) => {
+app.post('/api/scorekeeper/batch-save-scores', async (req, res) => {
     try {
         const { lane, game, players } = req.body;
         if (!lane || !game || !Array.isArray(players)) {
@@ -444,7 +444,7 @@ app.post('/api/scorekeeper/batch-save-scores', (req, res) => {
             return res.status(400).json({ ok: false, error: '無效的局數編號 (1~3)' });
         }
 
-        const updatedPlayers = db.batchSaveGameScores(laneNum, gameNum, players);
+        const updatedPlayers = await db.batchSaveGameScores(laneNum, gameNum, players);
 
         // Broadcast real-time update to all live boards
         io.emit('lane_updated', {
@@ -469,13 +469,13 @@ app.post('/api/scorekeeper/batch-save-scores', (req, res) => {
 });
 
 // 6. Batch update a whole lane (e.g. Save Game)
-app.post('/api/lane/batch-update', (req, res) => {
+app.post('/api/lane/batch-update', async (req, res) => {
     try {
         const { lane, players } = req.body;
         if (!lane || !Array.isArray(players)) {
             return res.status(400).json({ ok: false, error: 'Invalid lane or players payload' });
         }
-        const updatedPlayers = db.batchUpdateLane(parseInt(lane, 10), players);
+        const updatedPlayers = await db.batchUpdateLane(parseInt(lane, 10), players);
 
         // Broadcast change in real-time
         io.emit('lane_updated', {
@@ -491,9 +491,9 @@ app.post('/api/lane/batch-update', (req, res) => {
 });
 
 // 7. Get / Update Settings
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', async (req, res) => {
     try {
-        const settings = db.getSettings();
+        const settings = await db.getSettings();
         res.json({ ok: true, settings });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -501,10 +501,10 @@ app.get('/api/settings', (req, res) => {
 });
 
 // Verify Scorekeeper Password
-app.post('/api/verify-scorekeeper', (req, res) => {
+app.post('/api/verify-scorekeeper', async (req, res) => {
     try {
         const { password } = req.body;
-        const currentPassword = db.getSetting('scorekeeper_password') || '2222';
+        const currentPassword = await db.getSetting('scorekeeper_password') || '2222';
         if (String(password).trim() === String(currentPassword).trim()) {
             res.json({ ok: true, valid: true });
         } else {
@@ -515,9 +515,9 @@ app.post('/api/verify-scorekeeper', (req, res) => {
     }
 });
 
-app.post('/api/settings', (req, res) => {
+app.post('/api/settings', async (req, res) => {
     try {
-        const settings = db.updateSettings(req.body);
+        const settings = await db.updateSettings(req.body);
         io.emit('settings_updated', settings);
         res.json({ ok: true, settings });
     } catch (err) {
@@ -526,10 +526,10 @@ app.post('/api/settings', (req, res) => {
 });
 
 // 8. Reset Data
-app.post('/api/reset', (req, res) => {
+app.post('/api/reset', async (req, res) => {
     try {
         const mode = req.body.mode || 'seed'; // 'seed' (reseed full sample) or 'clear_scores'
-        const lanesData = db.resetAllData(mode);
+        const lanesData = await db.resetAllData(mode);
         io.emit('bulk_updated', {
             data: lanesData,
             message: mode === 'clear_scores' ? '分數已重置為空' : '已重新載入預設示範名冊'
@@ -541,10 +541,10 @@ app.post('/api/reset', (req, res) => {
 });
 
 // 9. Export Excel Report
-app.get('/api/export/excel', (req, res) => {
+app.get('/api/export/excel', async (req, res) => {
     try {
-        const lanesData = db.getAllLanes();
-        const settings = db.getSettings();
+        const lanesData = await db.getAllLanes();
+        const settings = await db.getSettings();
         const buffer = excelService.generateExcelReport(lanesData, settings);
 
         const filename = encodeURIComponent(`${settings.event_name || '保齡球聯誼賽'}_大會總成績表.xlsx`);
@@ -557,9 +557,9 @@ app.get('/api/export/excel', (req, res) => {
 });
 
 // 10. Download Sample Roster Template Excel
-app.get('/api/template/excel', (req, res) => {
+app.get('/api/template/excel', async (req, res) => {
     try {
-        const settings = db.getSettings();
+        const settings = await db.getSettings();
         const totalLanes = parseInt(settings.total_lanes || '40', 10);
         const playersPerLane = parseInt(settings.players_per_lane || '4', 10);
         const buffer = excelService.generateRosterTemplate(totalLanes, playersPerLane);
@@ -574,7 +574,7 @@ app.get('/api/template/excel', (req, res) => {
 });
 
 // 11. Import Roster from Excel / CSV
-app.post('/api/import/excel', upload.single('file'), (req, res) => {
+app.post('/api/import/excel', upload.single('file'), async (req, res) => {
     try {
         if (!req.file || !req.file.buffer) {
             return res.status(400).json({ ok: false, error: '請選擇要上傳的 Excel 或 CSV 檔案' });
@@ -584,7 +584,7 @@ app.post('/api/import/excel', upload.single('file'), (req, res) => {
             return res.status(400).json({ ok: false, error: '檔案內未包含有效資料' });
         }
 
-        const result = db.importRoster(rows);
+        const result = await db.importRoster(rows);
         io.emit('bulk_updated', {
             data: result.data,
             message: `成功匯入 ${result.count} 位選手名單`
@@ -597,7 +597,7 @@ app.post('/api/import/excel', upload.single('file'), (req, res) => {
 });
 
 // 12. Broadcast Announcement Banner
-app.post('/api/broadcast', (req, res) => {
+app.post('/api/broadcast', async (req, res) => {
     try {
         const { message, type = 'info', duration = 8000 } = req.body;
         if (!message) {
@@ -613,21 +613,21 @@ app.post('/api/broadcast', (req, res) => {
 // ==========================================
 // Socket.IO Real-Time Engine
 // ==========================================
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
     console.log(`[Socket.IO] Client connected: ${socket.id}`);
 
     // Send initial snapshot
     socket.emit('initial_sync', {
-        data: db.getAllLanes(),
-        settings: db.getSettings(),
-        stats: db.getStats()
+        data: await db.getAllLanes(),
+        settings: await db.getSettings(),
+        stats: await db.getStats()
     });
 
     // Scorekeeper updates a specific field live
-    socket.on('player:field_change', (payload) => {
+    socket.on('player:field_change', async (payload) => {
         try {
             const { lane, playerOrder, field, value } = payload;
-            const updatedPlayers = db.updatePlayerField(parseInt(lane, 10), parseInt(playerOrder, 10), field, value);
+            const updatedPlayers = await db.updatePlayerField(parseInt(lane, 10), parseInt(playerOrder, 10), field, value);
             // Broadcast to all other clients
             socket.broadcast.emit('lane_updated', {
                 lane: parseInt(lane, 10),
@@ -642,10 +642,10 @@ io.on('connection', (socket) => {
     });
 
     // Scorekeeper saves an entire lane/game
-    socket.on('lane:save_scores', (payload) => {
+    socket.on('lane:save_scores', async (payload) => {
         try {
             const { lane, players, game } = payload;
-            const updatedPlayers = db.batchUpdateLane(parseInt(lane, 10), players);
+            const updatedPlayers = await db.batchUpdateLane(parseInt(lane, 10), players);
             // Broadcast to everyone including sender
             io.emit('lane_updated', {
                 lane: parseInt(lane, 10),
@@ -661,11 +661,11 @@ io.on('connection', (socket) => {
     });
 
     // Client requests stats refresh
-    socket.on('request_stats', () => {
-        socket.emit('stats_updated', db.getStats());
+    socket.on('request_stats', async () => {
+        socket.emit('stats_updated', await db.getStats());
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
     });
 });

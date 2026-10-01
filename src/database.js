@@ -1,109 +1,34 @@
 /**
- * Bowling Event Management System - SQLite Database Manager
+ * Bowling Event Management System - Supabase Database Manager
  */
 
-const Database = require('better-sqlite3');
+require('dotenv').config({ path: '.env.local' });
+const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 const fs = require('fs');
 
-const DB_DIR = path.join(__dirname, '..', 'data');
-if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+    console.warn('⚠️ SUPABASE_URL or SUPABASE_KEY is missing! Make sure they are set in environment variables.');
 }
 
-const DB_PATH = path.join(DB_DIR, 'bowling.db');
-const db = new Database(DB_PATH);
+const supabase = createClient(supabaseUrl || 'http://localhost', supabaseKey || 'dummy');
 
-// Enable WAL mode for high performance & concurrency
-db.pragma('journal_mode = WAL');
-
-function initDb() {
-    // 1. Settings Table
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-    `);
-
-    // Default settings
-    const defaultSettings = {
-        event_name: '保齡球聯誼賽',
-        total_lanes: '40',
-        players_per_lane: '4',
-        female_bonus: '36',
-        scorekeeper_password: '2222',
-        banner_announcement: ''
-    };
-
-    const insertSetting = db.prepare(`
-        INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)
-    `);
-
-    for (const [key, value] of Object.entries(defaultSettings)) {
-        insertSetting.run(key, value);
-    }
-
-    // 2. Players Table
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS players (
-            lane INTEGER NOT NULL,
-            player_order INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            title TEXT DEFAULT '',
-            nickname TEXT DEFAULT '',
-            gender TEXT NOT NULL DEFAULT '男',
-            club TEXT DEFAULT '',
-            identity TEXT DEFAULT '社友',
-            g1 INTEGER DEFAULT NULL,
-            g2 INTEGER DEFAULT NULL,
-            g3 INTEGER DEFAULT NULL,
-            turkeys INTEGER DEFAULT 0,
-            flowers INTEGER DEFAULT 0,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (lane, player_order)
-        );
-    `);
-
-    // Schema migration for existing DB
-    try {
-        const tableInfo = db.prepare('PRAGMA table_info(players)').all();
-        const colNames = tableInfo.map(c => c.name);
-        if (!colNames.includes('title')) {
-            db.exec("ALTER TABLE players ADD COLUMN title TEXT DEFAULT ''");
-        }
-        if (!colNames.includes('nickname')) {
-            db.exec("ALTER TABLE players ADD COLUMN nickname TEXT DEFAULT ''");
-        }
-        if (!colNames.includes('identity')) {
-            db.exec("ALTER TABLE players ADD COLUMN identity TEXT DEFAULT '社友'");
-        }
-    } catch (e) {
-        console.error('Migration notice:', e.message);
-    }
-
-    // 3. Activity Logs Table
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            lane INTEGER,
-            player_order INTEGER,
-            action TEXT,
-            details TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-    `);
-
-    // Check if players table is empty, seed if so
-    const count = db.prepare('SELECT COUNT(*) as count FROM players').get().count;
-    if (count === 0) {
-        seedSampleData();
+async function initDb() {
+    // Schema is handled in Supabase SQL editor.
+    // Check if players are empty, seed if so
+    const { count, error } = await supabase.from('players').select('*', { count: 'exact', head: true });
+    if (!error && count === 0) {
+        await seedSampleData();
     }
 }
 
-function seedSampleData() {
-    const totalLanes = parseInt(getSetting('total_lanes') || '40', 10);
-    const playersPerLane = parseInt(getSetting('players_per_lane') || '4', 10);
+async function seedSampleData() {
+    const totalLanes = parseInt(await getSetting('total_lanes') || '40', 10);
+    const playersPerLane = parseInt(await getSetting('players_per_lane') || '4', 10);
 
     const yangFile = path.join(__dirname, '..', 'examples', '地區保齡球yang.xlsx');
     const standardFile = path.join(__dirname, '..', 'examples', '地區保齡球參賽名單.xlsx');
@@ -116,8 +41,8 @@ function seedSampleData() {
             const fileBuf = fs.readFileSync(targetFile);
             const parsed = excelService.parseUploadedExcel(fileBuf);
             if (parsed && parsed.length > 0) {
-                importRoster(parsed);
-                logAction(0, 0, 'SEED_DATA', `Initialized standard roster from ${path.basename(targetFile)}.`);
+                await importRoster(parsed);
+                await logAction(0, 0, 'SEED_DATA', `Initialized standard roster from ${path.basename(targetFile)}.`);
                 return;
             }
         } catch (e) {
@@ -125,82 +50,79 @@ function seedSampleData() {
         }
     }
 
-    const insertPlayer = db.prepare(`
-        INSERT OR REPLACE INTO players (lane, player_order, name, title, nickname, gender, club, identity, g1, g2, g3, turkeys, flowers, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `);
-
-    const insertMany = db.transaction(() => {
-        for (let lane = 1; lane <= totalLanes; lane++) {
-            for (let p = 1; p <= playersPerLane; p++) {
-                insertPlayer.run(lane, p, '', '', '', '男', '', '社友', null, null, null, 0, 0);
-            }
+    const playersToInsert = [];
+    for (let lane = 1; lane <= totalLanes; lane++) {
+        for (let p = 1; p <= playersPerLane; p++) {
+            playersToInsert.push({
+                lane,
+                player_order: p,
+                name: '', title: '', nickname: '', gender: '男', club: '', identity: '社友',
+                g1: null, g2: null, g3: null, turkeys: 0, flowers: 0
+            });
         }
-    });
-
-    insertMany();
-    logAction(0, 0, 'SEED_DATA', `Initialized blank roster with ${totalLanes} lanes.`);
+    }
+    
+    await supabase.from('players').upsert(playersToInsert, { onConflict: 'lane, player_order' });
+    await logAction(0, 0, 'SEED_DATA', `Initialized blank roster with ${totalLanes} lanes.`);
 }
 
-function getSettings() {
-    const rows = db.prepare('SELECT key, value FROM settings').all();
+async function getSettings() {
+    const { data, error } = await supabase.from('settings').select('key, value');
     const settings = {};
-    for (const r of rows) {
-        settings[r.key] = r.value;
+    if (data) {
+        for (const r of data) {
+            settings[r.key] = r.value;
+        }
     }
     return settings;
 }
 
-function getSetting(key) {
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-    return row ? row.value : null;
+async function getSetting(key) {
+    const { data, error } = await supabase.from('settings').select('value').eq('key', key).single();
+    return data ? data.value : null;
 }
 
-function updateSettings(settingsObj) {
-    const stmt = db.prepare(`
-        INSERT INTO settings (key, value) VALUES (?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `);
-    const updateTx = db.transaction((settings) => {
-        for (const [key, val] of Object.entries(settings)) {
-            stmt.run(key, String(val));
-        }
-    });
-    updateTx(settingsObj);
-    return getSettings();
+async function updateSettings(settingsObj) {
+    const updates = Object.entries(settingsObj).map(([key, value]) => ({ key, value: String(value) }));
+    await supabase.from('settings').upsert(updates, { onConflict: 'key' });
+    return await getSettings();
 }
 
-function getAllLanes() {
-    const totalLanes = Math.min(40, parseInt(getSetting('total_lanes') || '40', 10));
-    const rows = db.prepare(`
-        SELECT lane, player_order, name, title, nickname, gender, club, identity, g1, g2, g3, turkeys, flowers, updated_at
-        FROM players
-        WHERE lane <= ?
-        ORDER BY lane ASC, player_order ASC
-    `).all(totalLanes);
+async function getAllLanes() {
+    const totalLanesStr = await getSetting('total_lanes');
+    const totalLanes = Math.min(40, parseInt(totalLanesStr || '40', 10));
+    
+    const { data: rows, error } = await supabase
+        .from('players')
+        .select('*')
+        .lte('lane', totalLanes)
+        .order('lane', { ascending: true })
+        .order('player_order', { ascending: true });
 
     const lanesData = {};
     for (let l = 1; l <= totalLanes; l++) {
         lanesData[l] = [];
     }
 
-    for (const row of rows) {
-        if (lanesData[row.lane]) {
-            lanesData[row.lane].push({
-                id: row.player_order,
-                name: row.name || '',
-                title: row.title || '',
-                nickname: row.nickname || '',
-                gender: row.gender || '男',
-                club: row.club || '',
-                identity: row.identity || '社友',
-                g1: row.g1 === null || row.g1 === undefined ? '' : row.g1,
-                g2: row.g2 === null || row.g2 === undefined ? '' : row.g2,
-                g3: row.g3 === null || row.g3 === undefined ? '' : row.g3,
-                turkeys: row.turkeys || 0,
-                flowers: row.flowers || 0,
-                updated_at: row.updated_at
-            });
+    if (rows) {
+        for (const row of rows) {
+            if (lanesData[row.lane]) {
+                lanesData[row.lane].push({
+                    id: row.player_order,
+                    name: row.name || '',
+                    title: row.title || '',
+                    nickname: row.nickname || '',
+                    gender: row.gender || '男',
+                    club: row.club || '',
+                    identity: row.identity || '社友',
+                    g1: row.g1 === null || row.g1 === undefined ? '' : row.g1,
+                    g2: row.g2 === null || row.g2 === undefined ? '' : row.g2,
+                    g3: row.g3 === null || row.g3 === undefined ? '' : row.g3,
+                    turkeys: row.turkeys || 0,
+                    flowers: row.flowers || 0,
+                    updated_at: row.updated_at
+                });
+            }
         }
     }
 
@@ -209,17 +131,8 @@ function getAllLanes() {
         while (lanesData[l].length < 4) {
             lanesData[l].push({
                 id: lanesData[l].length + 1,
-                name: '',
-                title: '',
-                nickname: '',
-                gender: '男',
-                club: '',
-                identity: '社友',
-                g1: '',
-                g2: '',
-                g3: '',
-                turkeys: 0,
-                flowers: 0
+                name: '', title: '', nickname: '', gender: '男', club: '', identity: '社友',
+                g1: '', g2: '', g3: '', turkeys: 0, flowers: 0
             });
         }
     }
@@ -227,15 +140,14 @@ function getAllLanes() {
     return lanesData;
 }
 
-function getLanePlayers(lane) {
-    const rows = db.prepare(`
-        SELECT lane, player_order, name, title, nickname, gender, club, identity, g1, g2, g3, turkeys, flowers, updated_at
-        FROM players
-        WHERE lane = ?
-        ORDER BY player_order ASC
-    `).all(lane);
+async function getLanePlayers(lane) {
+    const { data: rows, error } = await supabase
+        .from('players')
+        .select('*')
+        .eq('lane', lane)
+        .order('player_order', { ascending: true });
 
-    return rows.map(row => ({
+    return (rows || []).map(row => ({
         id: row.player_order,
         name: row.name || '',
         title: row.title || '',
@@ -252,30 +164,30 @@ function getLanePlayers(lane) {
     }));
 }
 
-function updatePlayer(lane, playerOrder, data) {
-    const player = db.prepare(`
-        SELECT * FROM players WHERE lane = ? AND player_order = ?
-    `).get(lane, playerOrder);
+async function updatePlayer(lane, playerOrder, data) {
+    const { data: player, error: getErr } = await supabase
+        .from('players')
+        .select('*')
+        .eq('lane', lane)
+        .eq('player_order', playerOrder)
+        .maybeSingle();
 
     if (!player) {
-        db.prepare(`
-            INSERT INTO players (lane, player_order, name, title, nickname, gender, club, identity, g1, g2, g3, turkeys, flowers, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `).run(
+        await supabase.from('players').insert({
             lane,
-            playerOrder,
-            data.name || `選手${playerOrder}`,
-            data.title || '',
-            data.nickname || '',
-            data.gender || '男',
-            data.club || '',
-            data.identity || '社友',
-            data.g1 === '' || data.g1 === undefined ? null : parseInt(data.g1, 10),
-            data.g2 === '' || data.g2 === undefined ? null : parseInt(data.g2, 10),
-            data.g3 === '' || data.g3 === undefined ? null : parseInt(data.g3, 10),
-            parseInt(data.turkeys, 10) || 0,
-            parseInt(data.flowers, 10) || 0
-        );
+            player_order: playerOrder,
+            name: data.name || `選手${playerOrder}`,
+            title: data.title || '',
+            nickname: data.nickname || '',
+            gender: data.gender || '男',
+            club: data.club || '',
+            identity: data.identity || '社友',
+            g1: data.g1 === '' || data.g1 === undefined ? null : parseInt(data.g1, 10),
+            g2: data.g2 === '' || data.g2 === undefined ? null : parseInt(data.g2, 10),
+            g3: data.g3 === '' || data.g3 === undefined ? null : parseInt(data.g3, 10),
+            turkeys: parseInt(data.turkeys, 10) || 0,
+            flowers: parseInt(data.flowers, 10) || 0
+        });
     } else {
         const name = data.name !== undefined ? data.name : player.name;
         const title = data.title !== undefined ? data.title : player.title;
@@ -289,18 +201,17 @@ function updatePlayer(lane, playerOrder, data) {
         const turkeys = data.turkeys !== undefined ? Math.max(0, parseInt(data.turkeys, 10) || 0) : player.turkeys;
         const flowers = data.flowers !== undefined ? Math.max(0, parseInt(data.flowers, 10) || 0) : player.flowers;
 
-        db.prepare(`
-            UPDATE players
-            SET name = ?, title = ?, nickname = ?, gender = ?, club = ?, identity = ?, g1 = ?, g2 = ?, g3 = ?, turkeys = ?, flowers = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE lane = ? AND player_order = ?
-        `).run(name, title || '', nickname || '', gender, club, identity || '社友', g1, g2, g3, turkeys, flowers, lane, playerOrder);
+        await supabase.from('players').update({
+            name, title: title || '', nickname: nickname || '', gender, club, identity: identity || '社友',
+            g1, g2, g3, turkeys, flowers
+        }).eq('lane', lane).eq('player_order', playerOrder);
     }
 
-    logAction(lane, playerOrder, 'UPDATE_PLAYER', JSON.stringify(data));
-    return getLanePlayers(lane);
+    await logAction(lane, playerOrder, 'UPDATE_PLAYER', JSON.stringify(data));
+    return await getLanePlayers(lane);
 }
 
-function updatePlayerField(lane, playerOrder, field, value) {
+async function updatePlayerField(lane, playerOrder, field, value) {
     const allowedFields = ['name', 'title', 'nickname', 'gender', 'club', 'identity', 'g1', 'g2', 'g3', 'turkeys', 'flowers'];
     if (!allowedFields.includes(field)) {
         throw new Error(`Invalid field: ${field}`);
@@ -316,88 +227,76 @@ function updatePlayerField(lane, playerOrder, field, value) {
         val = Math.max(0, parseInt(value, 10) || 0);
     }
 
-    db.prepare(`
-        UPDATE players
-        SET ${field} = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE lane = ? AND player_order = ?
-    `).run(val, lane, playerOrder);
+    await supabase.from('players').update({
+        [field]: val
+    }).eq('lane', lane).eq('player_order', playerOrder);
 
-    logAction(lane, playerOrder, 'UPDATE_FIELD', `${field} = ${val}`);
-    return getLanePlayers(lane);
+    await logAction(lane, playerOrder, 'UPDATE_FIELD', `${field} = ${val}`);
+    return await getLanePlayers(lane);
 }
 
-function batchUpdateLane(lane, playersList) {
-    const updateTx = db.transaction((players) => {
-        for (let i = 0; i < players.length; i++) {
-            const p = players[i];
-            let pOrder = parseInt(p.id, 10);
-            if (isNaN(pOrder) || pOrder < 1 || pOrder > 4) {
-                pOrder = i + 1;
-            }
-            updatePlayer(lane, pOrder, p);
+async function batchUpdateLane(lane, playersList) {
+    const updates = [];
+    for (let i = 0; i < playersList.length; i++) {
+        const p = playersList[i];
+        let pOrder = parseInt(p.id, 10);
+        if (isNaN(pOrder) || pOrder < 1 || pOrder > 4) {
+            pOrder = i + 1;
         }
-    });
-    updateTx(playersList);
-    return getLanePlayers(lane);
-}
-
-function batchSaveGameScores(lane, game, scoresList) {
-    const gameField = `g${game}`;
-    const updateTx = db.transaction((list) => {
-        for (let i = 0; i < list.length; i++) {
-            const item = list[i];
-            let pId = parseInt(item.id, 10);
-            if (isNaN(pId) || pId < 1 || pId > 4) {
-                pId = i + 1;
-            }
-            let scoreVal = (item.score === '' || item.score === null || item.score === undefined) ? null : parseInt(item.score, 10);
-            if (scoreVal !== null) {
-                scoreVal = Math.max(0, Math.min(300, scoreVal));
-            }
-            const turkeys = (item.turkeys !== undefined && item.turkeys !== null) ? Math.max(0, parseInt(item.turkeys, 10) || 0) : null;
-            const flowers = (item.flowers !== undefined && item.flowers !== null) ? Math.max(0, parseInt(item.flowers, 10) || 0) : null;
-
-            if (turkeys !== null && flowers !== null) {
-                db.prepare(`
-                    UPDATE players
-                    SET ${gameField} = ?, turkeys = ?, flowers = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE lane = ? AND player_order = ?
-                `).run(scoreVal, turkeys, flowers, lane, pId);
-            } else {
-                db.prepare(`
-                    UPDATE players
-                    SET ${gameField} = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE lane = ? AND player_order = ?
-                `).run(scoreVal, lane, pId);
-            }
-        }
-    });
-    updateTx(scoresList);
-    logAction(lane, 0, 'PHOTO_OCR_SCORES_LOGGED', `Batch logged Game ${game} scores via Photo Recognition.`);
-    return getLanePlayers(lane);
-}
-
-function resetAllData(mode = 'seed') {
-    if (mode === 'clear_scores') {
-        db.prepare('UPDATE players SET g1 = NULL, g2 = NULL, g3 = NULL, turkeys = 0, flowers = 0, updated_at = CURRENT_TIMESTAMP').run();
-        logAction(0, 0, 'CLEAR_SCORES', 'Cleared all player scores and awards.');
-    } else {
-        db.prepare('DELETE FROM players').run();
-        seedSampleData();
-        logAction(0, 0, 'RESET_ALL', 'Reset all players with sample seed roster.');
+        await updatePlayer(lane, pOrder, p);
     }
-    return getAllLanes();
+    return await getLanePlayers(lane);
 }
 
-function importRoster(rows) {
+async function batchSaveGameScores(lane, game, scoresList) {
+    const gameField = `g${game}`;
+    for (let i = 0; i < scoresList.length; i++) {
+        const item = scoresList[i];
+        let pId = parseInt(item.id, 10);
+        if (isNaN(pId) || pId < 1 || pId > 4) {
+            pId = i + 1;
+        }
+        let scoreVal = (item.score === '' || item.score === null || item.score === undefined) ? null : parseInt(item.score, 10);
+        if (scoreVal !== null) {
+            scoreVal = Math.max(0, Math.min(300, scoreVal));
+        }
+        const turkeys = (item.turkeys !== undefined && item.turkeys !== null) ? Math.max(0, parseInt(item.turkeys, 10) || 0) : null;
+        const flowers = (item.flowers !== undefined && item.flowers !== null) ? Math.max(0, parseInt(item.flowers, 10) || 0) : null;
+
+        const updateData = { [gameField]: scoreVal };
+        if (turkeys !== null && flowers !== null) {
+            updateData.turkeys = turkeys;
+            updateData.flowers = flowers;
+        }
+        
+        await supabase.from('players').update(updateData).eq('lane', lane).eq('player_order', pId);
+    }
+    
+    await logAction(lane, 0, 'PHOTO_OCR_SCORES_LOGGED', `Batch logged Game ${game} scores via Photo Recognition.`);
+    return await getLanePlayers(lane);
+}
+
+async function resetAllData(mode = 'seed') {
+    if (mode === 'clear_scores') {
+        await supabase.from('players').update({ g1: null, g2: null, g3: null, turkeys: 0, flowers: 0 }).neq('lane', 0); // Update all
+        await logAction(0, 0, 'CLEAR_SCORES', 'Cleared all player scores and awards.');
+    } else {
+        await supabase.from('players').delete().neq('lane', 0); // Delete all
+        await seedSampleData();
+        await logAction(0, 0, 'RESET_ALL', 'Reset all players with sample seed roster.');
+    }
+    return await getAllLanes();
+}
+
+async function importRoster(rows) {
     const totalLanes = 40;
     const playersPerLane = 4;
 
     // Clean up any rogue lanes > 40
-    db.prepare('DELETE FROM players WHERE lane > 40').run();
-    updateSettings({ total_lanes: '40' });
+    await supabase.from('players').delete().gt('lane', 40);
+    await updateSettings({ total_lanes: '40' });
 
-    // Map input rows by `${lane}-${player_order}`
+    // Map input rows
     const rowMap = new Map();
     for (const r of rows) {
         const lane = parseInt(r.lane || r['球道'] || r['Lane'], 10);
@@ -429,51 +328,41 @@ function importRoster(rows) {
         }
     }
 
-    const insertOrReplace = db.prepare(`
-        INSERT OR REPLACE INTO players (lane, player_order, name, title, nickname, gender, club, identity, g1, g2, g3, turkeys, flowers, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `);
-
     let namedCount = 0;
-    const importTx = db.transaction(() => {
-        for (let lane = 1; lane <= totalLanes; lane++) {
-            for (let p = 1; p <= playersPerLane; p++) {
-                const key = `${lane}-${p}`;
-                if (rowMap.has(key)) {
-                    const data = rowMap.get(key);
-                    insertOrReplace.run(
-                        lane,
-                        p,
-                        data.name,
-                        data.title || '',
-                        data.nickname || '',
-                        data.gender,
-                        data.club,
-                        data.identity || '社友',
-                        data.g1,
-                        data.g2,
-                        data.g3,
-                        data.turkeys,
-                        data.flowers
-                    );
-                    if (data.name || data.nickname) namedCount++;
-                } else {
-                    // Blank slot
-                    insertOrReplace.run(lane, p, '', '', '', '男', '', '社友', null, null, null, 0, 0);
-                }
+    const upserts = [];
+    for (let lane = 1; lane <= totalLanes; lane++) {
+        for (let p = 1; p <= playersPerLane; p++) {
+            const key = `${lane}-${p}`;
+            if (rowMap.has(key)) {
+                const data = rowMap.get(key);
+                upserts.push({
+                    lane, player_order: p, name: data.name, title: data.title || '',
+                    nickname: data.nickname || '', gender: data.gender, club: data.club,
+                    identity: data.identity || '社友', g1: data.g1, g2: data.g2, g3: data.g3,
+                    turkeys: data.turkeys, flowers: data.flowers
+                });
+                if (data.name || data.nickname) namedCount++;
+            } else {
+                upserts.push({
+                    lane, player_order: p, name: '', title: '', nickname: '', gender: '男',
+                    club: '', identity: '社友', g1: null, g2: null, g3: null, turkeys: 0, flowers: 0
+                });
             }
         }
-    });
+    }
 
-    importTx();
-    logAction(0, 0, 'IMPORT_ROSTER', `Imported ${namedCount} players across 40 lanes.`);
-    return { success: true, count: namedCount, settings: getSettings(), data: getAllLanes() };
+    await supabase.from('players').upsert(upserts, { onConflict: 'lane, player_order' });
+    await logAction(0, 0, 'IMPORT_ROSTER', `Imported ${namedCount} players across 40 lanes.`);
+    return { success: true, count: namedCount, settings: await getSettings(), data: await getAllLanes() };
 }
 
-function getStats() {
-    const femaleBonus = parseInt(getSetting('female_bonus') || '36', 10);
-    const rows = db.prepare('SELECT * FROM players WHERE lane <= 40').all();
+async function getStats() {
+    const femaleBonusStr = await getSetting('female_bonus');
+    const femaleBonus = parseInt(femaleBonusStr || '36', 10);
     
+    const { data: rows, error } = await supabase.from('players').select('*').lte('lane', 40);
+    if (!rows) return {};
+
     let totalPlayers = rows.filter(p => p.name && p.name.trim() !== '').length;
     let playersWithScores = 0;
     let totalG1 = 0, totalG2 = 0, totalG3 = 0;
@@ -546,21 +435,19 @@ function getStats() {
     };
 }
 
-function logAction(lane, playerOrder, action, details) {
+async function logAction(lane, playerOrder, action, details) {
     try {
-        db.prepare(`
-            INSERT INTO logs (lane, player_order, action, details) VALUES (?, ?, ?, ?)
-        `).run(lane, playerOrder, action, details);
+        await supabase.from('logs').insert({
+            lane, player_order: playerOrder, action, details
+        });
     } catch (e) {
         console.error('Failed to write log:', e);
     }
 }
 
-// Initialize tables
-initDb();
-
+// Export Supabase instance instead of SQLite db
 module.exports = {
-    db,
+    supabase,
     initDb,
     getSettings,
     getSetting,
