@@ -22,17 +22,24 @@ class OcrService {
      */
     async recognizeScoreboard(imageBuffer, options = {}) {
         const { selectedLane = 1, selectedGame = 1, apiKey } = options;
+        
+        const openAiKey = process.env.OPENAI_KEY || process.env.OPENAI_API_KEY;
         const geminiApiKey = apiKey || process.env.GEMINI_API_KEY || process.env.GEMINI_KEY;
 
-        if (!geminiApiKey) {
-            return { ok: false, error: '伺服器未設定 GEMINI_KEY，請確認 Vercel 環境變數。' };
-        }
-
         try {
-            const aiResult = await this.recognizeWithGemini(imageBuffer, geminiApiKey, options);
+            let aiResult;
+            if (openAiKey) {
+                aiResult = await this.recognizeWithOpenAI(imageBuffer, openAiKey, options);
+            } else if (geminiApiKey) {
+                aiResult = await this.recognizeWithGemini(imageBuffer, geminiApiKey, options);
+            } else {
+                return { ok: false, error: '伺服器未設定 OPENAI_KEY 或 GEMINI_KEY，請確認 Vercel 環境變數。' };
+            }
+
             if (aiResult && aiResult.ok) {
                 return aiResult;
             }
+
             return { ok: false, error: 'Gemini 回傳異常' };
         } catch (aiErr) {
             console.warn('[OCR Service] Gemini AI Vision 辨識失敗:', aiErr.message);
@@ -43,6 +50,91 @@ class OcrService {
     /**
      * Google Gemini Multimodal AI Vision 辨識
      */
+    
+    async recognizeWithOpenAI(imageBuffer, apiKey, options = {}) {
+        const OpenAI = require('openai');
+        const openai = new OpenAI({ apiKey });
+        
+        const base64Image = imageBuffer.toString('base64');
+        let mimeType = 'image/jpeg';
+        if (imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50) mimeType = 'image/png';
+        
+        const prompt = `【保齡球計分板結構說明】：
+1. lane: 球道號碼。若圖片中看到明確球道號碼請填寫；若無法明確辨識則填寫 ${options.selectedLane || 1}。
+2. 4 位選手完賽累積總分 (p1_score, p2_score, p3_score, p4_score):
+   - 電視螢幕由上至下分為 4 列（分別代表第 1、2、3、4 位選手）。
+   - 請只讀取最右邊第 10 格下方的「大字最終總分」，介於 0 到 300 之間。
+   - 【極度重要】：計分板上的數字可能是「空心字體」(Hollow Font)。請仔細辨識由線條構成的數字。
+3. 特別獎項：
+   - turkeys: 連續三次全倒次數（若無請填 0）。
+   - flowers: 5+7+10 等特殊分瓶次數（若無請填 0）。
+
+【輸出格式】：
+請務必只輸出 JSON，格式如下：
+{
+  "lane": ${options.selectedLane || 1},
+  "p1_score": 94,
+  "p2_score": 101,
+  "p3_score": 151,
+  "p4_score": 93,
+  "p1_turkeys": 0, "p2_turkeys": 0, "p3_turkeys": 0, "p4_turkeys": 0,
+  "p1_flowers": 0, "p2_flowers": 0, "p3_flowers": 0, "p4_flowers": 0,
+  "confidence": 0.99,
+  "description": "成功辨識"
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: prompt },
+                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
+                    ]
+                }
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 300,
+            temperature: 0.1
+        });
+
+        const rawText = response.choices[0].message.content;
+        console.log('[OpenAI Raw Output]', rawText);
+        
+        const data = JSON.parse(rawText);
+        
+        const sanitizeScore = (s) => {
+            if (s === null || s === undefined || s === '') return '';
+            const n = parseInt(s, 10);
+            return isNaN(n) ? '' : Math.max(0, Math.min(300, n));
+        };
+        const laneVal = data.lane !== null && data.lane !== undefined ? parseInt(data.lane, 10) : (options.selectedLane || 1);
+
+        return {
+            ok: true,
+            engine: 'gpt-4o',
+            detectedLane: isNaN(laneVal) ? (options.selectedLane || 1) : laneVal,
+            scores: [
+                sanitizeScore(data.p1_score),
+                sanitizeScore(data.p2_score),
+                sanitizeScore(data.p3_score),
+                sanitizeScore(data.p4_score)
+            ],
+            turkeys: [
+                parseInt(data.p1_turkeys, 10) || 0, parseInt(data.p2_turkeys, 10) || 0,
+                parseInt(data.p3_turkeys, 10) || 0, parseInt(data.p4_turkeys, 10) || 0
+            ],
+            flowers: [
+                parseInt(data.p1_flowers, 10) || 0, parseInt(data.p2_flowers, 10) || 0,
+                parseInt(data.p3_flowers, 10) || 0, parseInt(data.p4_flowers, 10) || 0
+            ],
+            confidence: data.confidence || 0.95,
+            message: data.description || 'OpenAI 成功辨識計分板成績',
+            raw: rawText
+        };
+    }
+
     async recognizeWithGemini(imageBuffer, apiKey, options = {}) {
         const { GoogleGenAI } = require('@google/genai');
         const ai = new GoogleGenAI({ apiKey });
