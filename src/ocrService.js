@@ -22,7 +22,7 @@ class OcrService {
      */
     async recognizeScoreboard(imageBuffer, options = {}) {
         const { selectedLane = 1, selectedGame = 1, apiKey } = options;
-        const geminiApiKey = apiKey || process.env.GEMINI_API_KEY;
+        const geminiApiKey = apiKey || process.env.GEMINI_API_KEY || process.env.GEMINI_KEY;
 
         // 策略一：使用 Google Gemini AI Vision (如有設定 API Key)
         if (geminiApiKey) {
