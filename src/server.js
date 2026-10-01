@@ -369,6 +369,10 @@ app.post('/api/scorekeeper/recognize-photo', upload.single('photo'), async (req,
             apiKey
         });
 
+        if (!result.ok) {
+            return res.json({ ok: false, error: result.error });
+        }
+
         const targetLane = result.detectedLane || selectedLane;
         const currentPlayers = await db.getLanePlayers(targetLane);
 
