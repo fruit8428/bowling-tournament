@@ -322,7 +322,6 @@ app.post('/api/player/field', async (req, res) => {
         const updatedPlayers = await db.updatePlayerField(parseInt(lane, 10), parseInt(playerOrder, 10), field, value);
         
         // Broadcast change in real-time
-        io.emit('lane_updated', {
             lane: parseInt(lane, 10),
             players: updatedPlayers,
             updatedField: { playerOrder, field, value },
@@ -345,7 +344,6 @@ app.post('/api/player/update', async (req, res) => {
         const updatedPlayers = await db.updatePlayer(parseInt(lane, 10), parseInt(playerOrder, 10), data);
         
         // Broadcast change in real-time
-        io.emit('lane_updated', {
             lane: parseInt(lane, 10),
             players: updatedPlayers,
             timestamp: Date.now()
@@ -447,7 +445,6 @@ app.post('/api/scorekeeper/batch-save-scores', async (req, res) => {
         const updatedPlayers = await db.batchSaveGameScores(laneNum, gameNum, players);
 
         // Broadcast real-time update to all live boards
-        io.emit('lane_updated', {
             lane: laneNum,
             players: updatedPlayers,
             game: gameNum,
@@ -478,7 +475,6 @@ app.post('/api/lane/batch-update', async (req, res) => {
         const updatedPlayers = await db.batchUpdateLane(parseInt(lane, 10), players);
 
         // Broadcast change in real-time
-        io.emit('lane_updated', {
             lane: parseInt(lane, 10),
             players: updatedPlayers,
             timestamp: Date.now()
@@ -518,7 +514,6 @@ app.post('/api/verify-scorekeeper', async (req, res) => {
 app.post('/api/settings', async (req, res) => {
     try {
         const settings = await db.updateSettings(req.body);
-        io.emit('settings_updated', settings);
         res.json({ ok: true, settings });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -530,7 +525,6 @@ app.post('/api/reset', async (req, res) => {
     try {
         const mode = req.body.mode || 'seed'; // 'seed' (reseed full sample) or 'clear_scores'
         const lanesData = await db.resetAllData(mode);
-        io.emit('bulk_updated', {
             data: lanesData,
             message: mode === 'clear_scores' ? '分數已重置為空' : '已重新載入預設示範名冊'
         });
@@ -585,7 +579,6 @@ app.post('/api/import/excel', upload.single('file'), async (req, res) => {
         }
 
         const result = await db.importRoster(rows);
-        io.emit('bulk_updated', {
             data: result.data,
             message: `成功匯入 ${result.count} 位選手名單`
         });
@@ -603,7 +596,6 @@ app.post('/api/broadcast', async (req, res) => {
         if (!message) {
             return res.status(400).json({ ok: false, error: 'Message cannot be empty' });
         }
-        io.emit('announcement', { message, type, duration, timestamp: Date.now() });
         res.json({ ok: true, message: 'Broadcast sent' });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -617,7 +609,6 @@ io.on('connection', async (socket) => {
     console.log(`[Socket.IO] Client connected: ${socket.id}`);
 
     // Send initial snapshot
-    socket.emit('initial_sync', {
         data: await db.getAllLanes(),
         settings: await db.getSettings(),
         stats: await db.getStats()
@@ -637,7 +628,6 @@ io.on('connection', async (socket) => {
             });
         } catch (err) {
             console.error('[Socket.IO Error] player:field_change:', err);
-            socket.emit('error_message', { error: err.message });
         }
     });
 
@@ -647,7 +637,6 @@ io.on('connection', async (socket) => {
             const { lane, players, game } = payload;
             const updatedPlayers = await db.batchUpdateLane(parseInt(lane, 10), players);
             // Broadcast to everyone including sender
-            io.emit('lane_updated', {
                 lane: parseInt(lane, 10),
                 players: updatedPlayers,
                 game,
@@ -656,13 +645,11 @@ io.on('connection', async (socket) => {
             });
         } catch (err) {
             console.error('[Socket.IO Error] lane:save_scores:', err);
-            socket.emit('error_message', { error: err.message });
         }
     });
 
     // Client requests stats refresh
     socket.on('request_stats', async () => {
-        socket.emit('stats_updated', await db.getStats());
     });
 
     socket.on('disconnect', async () => {
@@ -671,10 +658,13 @@ io.on('connection', async (socket) => {
 });
 
 // Start server
+if (process.env.VERCEL !== '1') {
 server.listen(PORT, '0.0.0.0', () => {
     console.log('====================================================');
     console.log(`🎳 保齡球賽事記分與大會總表系統 已成功啟動！`);
     console.log(`🌐 本地伺服器網址: http://localhost:${PORT}`);
     console.log(`📱 局域網訪問 (手機記分員): http://${getLocalIpAddress()}:${PORT}`);
     console.log('====================================================');
-});
+}); 
+}
+module.exports = app;

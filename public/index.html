@@ -1992,12 +1992,12 @@
 
                 // 1. 本地 Socket.IO 廣播
                 if (socket && socket.connected) {
-                    socket.emit('player:field_change', {
+                    fetch(`${apiBase}/api/player/field`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                         lane,
                         playerOrder: pId,
                         field,
                         value
-                    });
+                    }) });
                 }
 
                 // 2. 雲端跨網即時廣播 (跨 Wi-Fi / 4G / GitHub Pages)
@@ -2042,12 +2042,12 @@
 
                 // 1. 本地 Socket.IO 廣播
                 if (socket && socket.connected) {
-                    socket.emit('player:field_change', {
+                    fetch(`${apiBase}/api/player/field`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                         lane,
                         playerOrder: pId,
                         field,
                         value: num
-                    });
+                    }) });
                 }
 
                 // 2. 雲端跨網即時廣播
@@ -2111,11 +2111,11 @@
 
             // 2. 本地 Socket.IO / REST 存檔
             if (socket && socket.connected) {
-                socket.emit('lane:save_scores', {
+                fetch(`${apiBase}/api/scorekeeper/batch-save-scores`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                     lane: targetLane,
                     players: lanesData[targetLane],
                     game: game
-                });
+                }) });
             } else {
                 try {
                     const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
@@ -3265,11 +3265,11 @@
 
             // 2. 本地 Socket.IO / REST 存檔 (若有伺服器連線)
             if (socket && socket.connected) {
-                socket.emit('lane:save_scores', {
+                fetch(`${apiBase}/api/scorekeeper/batch-save-scores`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                     lane: targetLane,
                     players: lanesData[targetLane],
                     game: game
-                });
+                }) });
             } else {
                 try {
                     const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
@@ -5083,10 +5083,10 @@
 
             // 1. 本地後端 Socket.IO / REST 存檔
             if (socket && socket.connected) {
-                socket.emit('lane:save_scores', {
+                fetch(`${apiBase}/api/scorekeeper/batch-save-scores`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                     lane,
                     players: lanesData[lane]
-                });
+                }) });
             } else {
                 try {
                     const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
