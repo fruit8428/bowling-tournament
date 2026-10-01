@@ -24,33 +24,19 @@ class OcrService {
         const { selectedLane = 1, selectedGame = 1, apiKey } = options;
         const geminiApiKey = apiKey || process.env.GEMINI_API_KEY || process.env.GEMINI_KEY;
 
-        // 策略一：使用 Google Gemini AI Vision (如有設定 API Key)
-        if (geminiApiKey) {
-            try {
-                const aiResult = await this.recognizeWithGemini(imageBuffer, geminiApiKey, options);
-                if (aiResult && aiResult.ok) {
-                    return aiResult;
-                }
-            } catch (aiErr) {
-                console.warn('[OCR Service] Gemini AI Vision 辨識失敗，切換至本機電腦視覺辨識備援:', aiErr.message);
-            }
+        if (!geminiApiKey) {
+            return { ok: false, error: '伺服器未設定 GEMINI_KEY，請確認 Vercel 環境變數。' };
         }
 
-        // 策略二：使用 Sharp + 本機電腦視覺與 Tesseract OCR
         try {
-            const cvResult = await this.recognizeWithLocalCV(imageBuffer, options);
-            return cvResult;
-        } catch (cvErr) {
-            console.error('[OCR Service] 本機電腦視覺解析錯誤:', cvErr);
-            return {
-                ok: false,
-                error: '無法辨識圖片內容，請確認拍攝清晰且包含球道螢幕與計分板。',
-                detectedLane: selectedLane,
-                scores: ['', '', '', ''],
-                turkeys: [0, 0, 0, 0],
-                flowers: [0, 0, 0, 0],
-                engine: 'none'
-            };
+            const aiResult = await this.recognizeWithGemini(imageBuffer, geminiApiKey, options);
+            if (aiResult && aiResult.ok) {
+                return aiResult;
+            }
+            return { ok: false, error: 'Gemini 回傳異常' };
+        } catch (aiErr) {
+            console.warn('[OCR Service] Gemini AI Vision 辨識失敗:', aiErr.message);
+            return { ok: false, error: 'AI 辨識失敗: ' + aiErr.message };
         }
     }
 
