@@ -2756,8 +2756,13 @@
                     console.log('後端 API 離線，使用前端原生視覺與 AI 引擎');
                 }
 
-                // 2. 若後端未回應或離線，使用前端直連 (Gemini AI Vision 或 本機 Canvas CV)
-                if (!result || !result.ok) {
+                // 2. 若後端明確回傳錯誤，直接停止並顯示錯誤
+                if (result && !result.ok) {
+                    throw new Error(result.error || '伺服器辨識失敗');
+                }
+                
+                // 3. 若完全沒有 result (後端斷線)，才使用前端備援
+                if (!result) {
                     result = await clientRecognizeScoreboardPhoto(file, curSelectedLane, curSelectedGame);
                 }
 
