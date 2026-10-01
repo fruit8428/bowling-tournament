@@ -199,7 +199,7 @@ class OcrService {
                 parseInt(data.p4_flowers, 10) || 0
             ],
             confidence: data.confidence || 0.95,
-            message: data.description || 'Gemini AI 成功辨識計分板成績'
+            message: data.description || 'Gemini AI 成功辨識計分板成績', raw: rawText
         };
     }
 
