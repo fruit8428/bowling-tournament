@@ -162,6 +162,7 @@ class OcrService {
 
         }
         const rawText = response.text || '';
+        console.log('[Gemini Raw Output]', rawText);
         let cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
         if (jsonMatch) cleanJson = jsonMatch[0];
