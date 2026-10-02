@@ -4936,17 +4936,10 @@
         // 比賽開始清空歸零 & 計分員快速修改成績核心邏輯
         // ==========================================
         function handleStartTournamentReset() {
-            if (!isScorekeeperAuthenticated || isAssistantScorekeeper) {
-                if (isAssistantScorekeeper) {
-                    showToast('❌ 助理計分員無權限執行「比賽歸零」操作', 'error');
-                    return;
-                }
-                openAuthModal('⚠️ 此操作為主計分員/裁判專用，請先輸入授權密碼以執行【比賽開始，清空分數歸零】：', () => {
-                    promptTournamentResetConfirm();
-                });
-                return;
-            }
-            promptTournamentResetConfirm();
+            // 強制要求輸入管理員密碼才能清空，不論目前是否已登入，避免誤觸災難
+            openAuthModal('⚠️ 警告：這會清空全場分數！請輸入【管理計分員】密碼以授權：', () => {
+                promptTournamentResetConfirm();
+            });
         }
 
         async function promptTournamentResetConfirm() {
