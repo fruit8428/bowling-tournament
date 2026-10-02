@@ -1027,6 +1027,16 @@
         // ==========================================
         function requestScorekeeperAccess(customPrompt = null, onSuccessCallback = null) {
             if (isScorekeeperAuthenticated) {
+                if (isAssistantScorekeeper && customPrompt && customPrompt.includes('管理')) {
+                    logoutScorekeeper();
+                    setTimeout(() => { openAuthModal(customPrompt, onSuccessCallback); }, 300);
+                    return;
+                }
+                if (!isAssistantScorekeeper && customPrompt && customPrompt.includes('助理')) {
+                    logoutScorekeeper();
+                    setTimeout(() => { openAuthModal(customPrompt, onSuccessCallback); }, 300);
+                    return;
+                }
                 if (onSuccessCallback) onSuccessCallback();
                 else navigateTo('scorekeeper');
             } else {
@@ -1574,24 +1584,31 @@
                     <div class="max-w-5xl mx-auto w-full my-3 grid grid-cols-1 md:grid-cols-2 gap-6 z-10">
                         
                         <!-- 1. 記分員入口 (手機端 - 密碼鎖保護) -->
-                        <div onclick="requestScorekeeperAccess()" class="group cursor-pointer bg-white hover:bg-blue-50/50 p-6 sm:p-8 rounded-3xl border border-slate-200 hover:border-blue-400 shadow-md hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-                            <div class="flex items-start justify-between mb-5">
-                                <div class="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner">
-                                    📱
-                                </div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-xs font-black uppercase px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
-                                        <span>🔒</span> 密碼保護
-                                    </span>
-                                </div>
-                            </div>
+                        <div class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-md flex flex-col justify-between h-full">
                             <div>
-                                <h2 class="text-2xl font-black text-slate-900 group-hover:text-blue-600 transition-colors mb-2">記分員登錄端</h2>
-                                <p class="text-slate-600 text-sm leading-relaxed mb-6">手機現場專用：輸入專屬授權密碼進入，快速輸入各局成績、切換選手性別與記錄火雞 🦃 / 霸王花 🌺 獎項。</p>
+                                <div class="flex items-start justify-between mb-5">
+                                    <div class="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center text-3xl shadow-inner">
+                                        📱
+                                    </div>
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-xs font-black uppercase px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                                            <span>🔒</span> 密碼保護
+                                        </span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h2 class="text-2xl font-black text-slate-900 mb-2">記分員登錄端</h2>
+                                    <p class="text-slate-600 text-sm leading-relaxed mb-6">手機現場專用：請依您的權限選擇登入身分。</p>
+                                </div>
                             </div>
-                            <div class="flex items-center justify-between text-blue-600 font-black text-sm pt-4 border-t border-slate-100">
-                                <span>${isScorekeeperAuthenticated ? '已解鎖 • 點擊進入記分' : '輸入密碼登錄'}</span>
-                                <span class="group-hover:translate-x-1.5 transition-transform">➔</span>
+                            
+                            <div class="flex flex-col gap-3 pt-4 border-t border-slate-100 mt-auto">
+                                <button onclick="requestScorekeeperAccess('📸 請輸入【助理計分員】密碼 (預設 3523)')" class="w-full py-3.5 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-black rounded-2xl transition-all border border-blue-200 shadow-sm flex items-center justify-center gap-2 active:scale-95">
+                                    <span>📸</span> 進入助理計分員
+                                </button>
+                                <button onclick="requestScorekeeperAccess('✏️ 請輸入【管理計分員】密碼 (預設 2222)')" class="w-full py-3.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-black rounded-2xl transition-all border border-emerald-200 shadow-sm flex items-center justify-center gap-2 active:scale-95">
+                                    <span>✏️</span> 進入管理計分員
+                                </button>
                             </div>
                         </div>
 
