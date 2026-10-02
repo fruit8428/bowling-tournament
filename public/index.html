@@ -1724,9 +1724,7 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-1.5">
-                            <button onclick="logoutScorekeeper()" title="安全登出" class="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 active:scale-95 rounded-xl text-xs font-black transition-all flex items-center gap-1 shadow-sm">
-                                <span>🚪</span> 登出
-                            </button>
+
                         </div>
                     </div>
 
@@ -3416,9 +3414,7 @@
                                                 <span>✏️</span> 計分員模式 (可修改分數)
                                             </span>
                                         `}
-                                        <button onclick="logoutScorekeeper()" class="px-2.5 py-1 bg-slate-200 hover:bg-rose-100 text-slate-700 hover:text-rose-700 rounded-full text-xs font-bold transition-all cursor-pointer shadow-2xs" title="登出並切換回一般人看榜模式">
-                                            🚪 登出 / 切換身分
-                                        </button>
+
                                     ` : `
                                         <span class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 border border-slate-300 px-3 py-1 rounded-full font-bold text-xs">
                                             <span>👀</span> 一般人看榜模式 (純看不能改)
@@ -3503,9 +3499,7 @@
                                 <span>🔄</span> 比賽開始，清空分數歸零
                             </button>
                             ${isScorekeeperAuthenticated ? `
-                                <button onclick="logoutScorekeeper()" class="py-2.5 px-3 bg-slate-200 hover:bg-rose-100 text-slate-700 hover:text-rose-700 rounded-xl text-xs font-bold transition-all cursor-pointer">
-                                    🚪 登出
-                                </button>
+
                             ` : `
                                 <button onclick="requestScorekeeperAccess('🔑 請輸入【管理計分員】專屬密碼以開啟修改分數權限：')" class="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer">
                                     🔑 登入計分員
