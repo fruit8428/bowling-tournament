@@ -1203,7 +1203,7 @@
             isAssistantScorekeeper = false;
             sessionStorage.removeItem(AUTH_STORAGE_KEY);
             sessionStorage.removeItem('assistantRole');
-            showToast('🔒 已安全登出，已切換回【一般人看榜模式】（只能看，不能改）', 'info');
+            showToast('🔑 已安全登出，已切換回【一般人看榜模式】（只能看，不能改）', 'info');
             if (currentView === 'scorekeeper' || currentView === 'admin') {
                 currentView = 'dashboard';
             }
@@ -1455,7 +1455,7 @@
         // ==========================================
         function navigateTo(view) {
             if (view === 'scorekeeper' && !isScorekeeperAuthenticated) {
-                openAuthModal('🔒 進入記分員端需輸入授權密碼：', () => {
+                openAuthModal('🔑 進入記分員端需輸入授權密碼：', () => {
                     currentView = 'scorekeeper';
                     renderCurrentView();
                 });
@@ -1466,7 +1466,7 @@
                 return;
             }
             if (view === 'admin' && !isScorekeeperAuthenticated) {
-                openAuthModal('🔒 進入賽事管理後台需輸入授權密碼：', () => {
+                openAuthModal('🔑 進入賽事管理後台需輸入授權密碼：', () => {
                     currentView = 'admin';
                     renderCurrentView();
                 });
@@ -1584,7 +1584,7 @@
                     <!-- 主功能卡片區塊 (明亮卡片設計) -->
                     <div class="max-w-5xl mx-auto w-full my-3 grid grid-cols-1 md:grid-cols-2 gap-6 z-10">
                         
-                        <!-- 1. 記分員入口 (手機端 - 密碼鎖保護) -->
+                        <!-- 1. 記分員入口 (手機端 - 密碼保護) -->
                         <div class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-md flex flex-col justify-between h-full">
                             <div>
                                 <div class="flex items-start justify-between mb-5">
@@ -1593,7 +1593,7 @@
                                     </div>
                                     <div class="flex items-center gap-1.5">
                                         <span class="text-xs font-black uppercase px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
-                                            <span>🔒</span> 密碼保護
+                                            <span>🔑</span> 密碼保護
                                         </span>
                                     </div>
                                 </div>
@@ -1672,7 +1672,7 @@
                     <!-- 底部選單 -->
                     <div class="max-w-5xl mx-auto w-full pt-4 pb-2 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 border-t border-slate-200 z-10 font-medium">
                         <div>
-                            <span>🎳 保齡球賽事全功能系統 • 手機即時連線 • 密碼安全鎖定</span>
+                            <span>🎳 保齡球賽事全功能系統 • 手機即時連線 • 密碼安全保護</span>
                         </div>
                         <div class="flex items-center gap-4">
                             <button onclick="openQrModal()" class="text-blue-600 hover:text-blue-800 transition-colors underline font-bold">
@@ -3423,7 +3423,7 @@
                                         <span class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 border border-slate-300 px-3 py-1 rounded-full font-bold text-xs">
                                             <span>👀</span> 一般人看榜模式 (純看不能改)
                                         </span>
-                                        <button onclick="requestScorekeeperAccess('🔒 請輸入【管理計分員】專屬密碼以開啟修改分數權限：')" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95">
+                                        <button onclick="requestScorekeeperAccess('🔑 請輸入【管理計分員】專屬密碼以開啟修改分數權限：')" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95">
                                             🔑 登入計分員 (修改成績)
                                         </button>
                                     `}
@@ -3507,7 +3507,7 @@
                                     🚪 登出
                                 </button>
                             ` : `
-                                <button onclick="requestScorekeeperAccess('🔒 請輸入【管理計分員】專屬密碼以開啟修改分數權限：')" class="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer">
+                                <button onclick="requestScorekeeperAccess('🔑 請輸入【管理計分員】專屬密碼以開啟修改分數權限：')" class="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer">
                                     🔑 登入計分員
                                 </button>
                             `}
@@ -5004,7 +5004,7 @@
                 return;
             }
             if (!isScorekeeperAuthenticated) {
-                showToast('🔒 目前為一般人看榜模式（只能看，不能改）。若為計分員請點擊上方登入。', 'info');
+                showToast('🔑 目前為一般人看榜模式（只能看，不能改）。若為計分員請點擊上方登入。', 'info');
             }
         }
 
@@ -5015,7 +5015,7 @@
                 return;
             }
             if (!isScorekeeperAuthenticated) {
-                openAuthModal('🔒 目前為瀏覽模式（一般人只能看，不能改）。若為計分員請輸入授權密碼以修改成績：', () => {
+                openAuthModal('🔑 目前為瀏覽模式（一般人只能看，不能改）。若為計分員請輸入授權密碼以修改成績：', () => {
                     openQuickScoreModal(lane, pId, activeGame);
                 });
                 return;
