@@ -1824,7 +1824,7 @@
                             </div>
                             
                             <button onclick="saveScorekeeperData()" 
-                                    ${isSkLocked ? 'disabled' : ''}
+                                    ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''}
                                     class="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg transition-all ${isSkLocked ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-98 shadow-emerald-600/30'} flex items-center justify-center gap-2">
                                 <span>📥</span> 儲存第 ${skSelectedGame} 局全道成績
                             </button>
@@ -1888,7 +1888,7 @@
                                 <div class="flex-1 min-w-0 flex items-center bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 focus-within:border-blue-500 focus-within:bg-white transition-all">
                                     <span class="text-xs font-black text-slate-500 mr-1.5 shrink-0">姓名:</span>
                                     <input type="text" value="${player.name || ''}" 
-                                        ${isSkLocked ? 'disabled' : ''}
+                                        ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''}
                                         onchange="updatePlayerFieldLive(${skSelectedLane}, ${player.id}, 'name', this.value)" 
                                         placeholder="輸入姓名" 
                                         class="w-full bg-transparent outline-none font-black text-slate-900 text-sm sm:text-base">
@@ -1897,7 +1897,7 @@
                                 <!-- 一鍵切換性別 -->
                                 <div class="w-20 shrink-0">
                                     <button type="button" 
-                                            ${isSkLocked ? 'disabled' : ''}
+                                            ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''}
                                             onclick="togglePlayerGender(${skSelectedLane}, ${player.id})" 
                                             class="w-full py-1.5 font-black rounded-xl border transition-all text-center text-xs shadow-sm active:scale-95 ${genderBtnClass}">
                                         ${genderIcon}
@@ -1911,7 +1911,7 @@
                                 <div class="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-200 focus-within:border-amber-400 focus-within:bg-amber-50/40 transition-all">
                                     <span class="text-xs font-black text-amber-800 mr-1 shrink-0">職稱:</span>
                                     <input type="text" value="${player.title || ''}" 
-                                        ${isSkLocked ? 'disabled' : ''}
+                                        ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''}
                                         onchange="updatePlayerFieldLive(${skSelectedLane}, ${player.id}, 'title', this.value)" 
                                         placeholder="如 PP/PE/CP" 
                                         class="w-full bg-transparent outline-none text-xs font-black text-slate-800 placeholder:text-slate-400 placeholder:font-normal">
@@ -1921,7 +1921,7 @@
                                 <div class="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-200 focus-within:border-blue-400 focus-within:bg-blue-50/40 transition-all">
                                     <span class="text-xs font-black text-blue-800 mr-1 shrink-0">社名:</span>
                                     <input type="text" value="${player.nickname || ''}" 
-                                        ${isSkLocked ? 'disabled' : ''}
+                                        ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''}
                                         onchange="updatePlayerFieldLive(${skSelectedLane}, ${player.id}, 'nickname', this.value)" 
                                         placeholder="社名 / 英文名" 
                                         class="w-full bg-transparent outline-none text-xs font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-normal">
@@ -1930,7 +1930,7 @@
                                 <!-- 身份 (Identity: 社友 / 寶尊眷 / 子女) -->
                                 <div class="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-200 focus-within:border-purple-400 focus-within:bg-purple-50/40 transition-all">
                                     <span class="text-xs font-black text-purple-800 mr-1 shrink-0">身份:</span>
-                                    <select ${isSkLocked ? 'disabled' : ''}
+                                    <select ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''}
                                             onchange="updatePlayerIdentity(${skSelectedLane}, ${player.id}, this.value)"
                                             class="w-full bg-transparent outline-none text-xs font-black text-slate-800 cursor-pointer">
                                         <option value="社友" ${(player.identity || '社友') === '社友' ? 'selected' : ''}>社友 👔</option>
@@ -1944,7 +1944,7 @@
                             <div class="flex items-center bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:bg-emerald-50/30 transition-all">
                                 <span class="text-xs font-black text-emerald-800 mr-1.5 shrink-0">所屬社:</span>
                                 <input type="text" value="${player.club || ''}" 
-                                    ${isSkLocked ? 'disabled' : ''}
+                                    ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''}
                                     onchange="updatePlayerFieldLive(${skSelectedLane}, ${player.id}, 'club', this.value)" 
                                     placeholder="如 12-1龍門社 / 04-3民生社" 
                                     class="w-full bg-transparent outline-none text-xs font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-normal">
@@ -1960,7 +1960,7 @@
                                     data-player-id="${player.id}"
                                     data-player-idx="${pIndex}"
                                     autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric"
-                                    ${isSkLocked ? 'disabled' : ''}
+                                    ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''}
                                     value="${scoreVal !== undefined && scoreVal !== null ? scoreVal : ''}" 
                                     oninput="updatePlayerScoreLive(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', this.value)"
                                     onchange="updatePlayerScoreLive(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', this.value)" 
@@ -1970,11 +1970,11 @@
                             
                             <!-- 快速加減分小按鈕 -->
                             <div class="flex items-center justify-end gap-1.5 mt-2.5 pt-2.5 border-t border-slate-200 no-print">
-                                <button type="button" ${isSkLocked ? 'disabled' : ''} onclick="adjustScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', -10)" class="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">-10</button>
-                                <button type="button" ${isSkLocked ? 'disabled' : ''} onclick="adjustScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 10)" class="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">+10</button>
-                                <button type="button" ${isSkLocked ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 200)" class="px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-lg text-xs font-black text-blue-700 hover:bg-blue-100 active:scale-95 shadow-sm">200分</button>
-                                <button type="button" ${isSkLocked ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 300)" class="px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-xs font-black text-amber-800 hover:bg-amber-100 active:scale-95 shadow-sm">滿分300</button>
-                                <button type="button" ${isSkLocked ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', '')" class="px-2.5 py-1 bg-rose-50 border border-rose-200 rounded-lg text-xs font-black text-rose-700 hover:bg-rose-100 active:scale-95 shadow-sm">清除</button>
+                                <button type="button" ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="adjustScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', -10)" class="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">-10</button>
+                                <button type="button" ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="adjustScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 10)" class="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">+10</button>
+                                <button type="button" ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 200)" class="px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-lg text-xs font-black text-blue-700 hover:bg-blue-100 active:scale-95 shadow-sm">200分</button>
+                                <button type="button" ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 300)" class="px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-xs font-black text-amber-800 hover:bg-amber-100 active:scale-95 shadow-sm">滿分300</button>
+                                <button type="button" ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', '')" class="px-2.5 py-1 bg-rose-50 border border-rose-200 rounded-lg text-xs font-black text-rose-700 hover:bg-rose-100 active:scale-95 shadow-sm">清除</button>
                             </div>
                         </div>
 
@@ -1985,8 +1985,8 @@
                                     🦃 火雞 (Turkey): <span class="text-sm font-black text-amber-700">${player.turkeys || 0}</span>
                                 </span>
                                 <div class="flex space-x-2 w-full">
-                                    <button ${isSkLocked ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'turkeys', -1)" class="flex-1 bg-white border border-amber-300 text-amber-800 rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-amber-100 shadow-sm">-</button>
-                                    <button ${isSkLocked ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'turkeys', 1)" class="flex-1 bg-amber-500 text-white rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-amber-600 shadow-sm">+</button>
+                                    <button ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'turkeys', -1)" class="flex-1 bg-white border border-amber-300 text-amber-800 rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-amber-100 shadow-sm">-</button>
+                                    <button ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'turkeys', 1)" class="flex-1 bg-amber-500 text-white rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-amber-600 shadow-sm">+</button>
                                 </div>
                             </div>
                             
@@ -1995,8 +1995,8 @@
                                     🌺 霸王花: <span class="text-sm font-black text-pink-700">${player.flowers || 0}</span>
                                 </span>
                                 <div class="flex space-x-2 w-full">
-                                    <button ${isSkLocked ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'flowers', -1)" class="flex-1 bg-white border border-pink-300 text-pink-800 rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-pink-100 shadow-sm">-</button>
-                                    <button ${isSkLocked ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'flowers', 1)" class="flex-1 bg-pink-500 text-white rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-pink-600 shadow-sm">+</button>
+                                    <button ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'flowers', -1)" class="flex-1 bg-white border border-pink-300 text-pink-800 rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-pink-100 shadow-sm">-</button>
+                                    <button ${(isSkLocked || isAssistantScorekeeper) ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'flowers', 1)" class="flex-1 bg-pink-500 text-white rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-pink-600 shadow-sm">+</button>
                                 </div>
                             </div>
                         </div>
@@ -2009,6 +2009,7 @@
         }
 
         function updatePlayerFieldLive(lane, pId, field, value) {
+            if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 player[field] = value;
@@ -2034,6 +2035,7 @@
         }
 
         function togglePlayerGender(lane, pId) {
+            if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 player.gender = player.gender === '男' ? '女' : '男';
@@ -2043,6 +2045,7 @@
         }
 
         function updatePlayerIdentity(lane, pId, identityVal) {
+            if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 player.identity = identityVal;
@@ -2052,6 +2055,7 @@
         }
 
         function updatePlayerScoreLive(lane, pId, field, value) {
+            if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             let num = value === '' ? '' : parseInt(value, 10);
             if (num !== '') {
                 if (isNaN(num)) num = '';
@@ -2110,6 +2114,7 @@
         }
 
         async function saveScorekeeperData() {
+            if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動儲存權限', 'error'); return; }
             if (isSkLocked) return;
 
             const targetLane = parseInt(skSelectedLane, 10) || 1;
