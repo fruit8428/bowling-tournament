@@ -2026,6 +2026,7 @@
         }
 
         function updatePlayerFieldLive(lane, pId, field, value) {
+            const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
             if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
@@ -2052,6 +2053,7 @@
         }
 
         function togglePlayerGender(lane, pId) {
+            const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
             if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
@@ -2062,6 +2064,7 @@
         }
 
         function updatePlayerIdentity(lane, pId, identityVal) {
+            const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
             if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
@@ -2072,6 +2075,7 @@
         }
 
         function updatePlayerScoreLive(lane, pId, field, value) {
+            const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
             if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             let num = value === '' ? '' : parseInt(value, 10);
             if (num !== '') {
