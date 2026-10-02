@@ -1046,6 +1046,9 @@
         }
 
         function openAuthModal(customPrompt = null, onSuccessCallback = null) {
+            if (customPrompt && customPrompt.includes('管理')) intendedAuthRole = 'admin';
+            else if (customPrompt && customPrompt.includes('助理')) intendedAuthRole = 'assistant';
+            else intendedAuthRole = null;
             authSuccessCallback = onSuccessCallback || null;
             currentEnteredPin = '';
             const input = document.getElementById('auth-pin-input');
@@ -1145,41 +1148,24 @@
 
             let isValid = false;
             if (currentEnteredPin === SCOREKEEPER_PASSWORD || currentEnteredPin === '2222') {
+                if (intendedAuthRole === 'assistant') {
+                    const errMsg = document.getElementById('auth-error-msg');
+                    if (errMsg) errMsg.innerText = '⚠️ 此為管理員密碼，請輸入助理專屬密碼';
+                    return;
+                }
                 isValid = true;
                 isAssistantScorekeeper = false;
                 sessionStorage.setItem('assistantRole', 'false');
             } else if (currentEnteredPin === '3523') {
+                if (intendedAuthRole === 'admin') {
+                    const errMsg = document.getElementById('auth-error-msg');
+                    if (errMsg) errMsg.innerText = '⚠️ 此為助理密碼，無修改權限！請輸入管理員密碼 (2222)';
+                    return;
+                }
                 isValid = true;
                 isAssistantScorekeeper = true;
                 sessionStorage.setItem('assistantRole', 'true');
-            }
-            
-            if (!isValid && isConnectedToServer) {
-                try {
-                    const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
-                    const res = await fetch(`${apiBase}/api/verify-scorekeeper`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ password: currentEnteredPin })
-                    });
-                    const result = await res.json();
-                    if (result.ok && result.valid) {
-                        isValid = true;
-                    }
-                } catch (e) {}
-            }
-
-            if (isValid) {
-                isScorekeeperAuthenticated = true;
-                sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
-                const cb = authSuccessCallback;
-                closeAuthModal();
-                if (cb) {
-                    cb();
-                } else if (currentView === 'dashboard') {
-                    renderCurrentView();
-                    showToast('🔓 記分員授權成功！已開啟修改分數權限', 'success');
-                } else {
+            } else {
                     navigateTo('scorekeeper');
                     showToast('🔓 記分員授權成功！歡迎使用', 'success');
                 }
