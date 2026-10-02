@@ -5164,7 +5164,6 @@
 
             // 1. 本地後端 Socket.IO / REST 存檔
             const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
-            const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
             if (socket && socket.connected) {
                 fetch(`${apiBase}/api/scorekeeper/batch-save-scores`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                     lane,
