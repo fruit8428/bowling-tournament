@@ -512,6 +512,7 @@
 
         // 記分員身份認證狀態
         let isScorekeeperAuthenticated = false;
+        let isAssistantScorekeeper = false;
         let currentEnteredPin = '';
         let authSuccessCallback = null;
         let currentEditingTarget = null; // { lane: 1, pId: 1, gender: '男' }
@@ -566,8 +567,16 @@
             if (queryPwd === validPassword || queryPwd === '2222' || queryAuth === 'true') {
                 isScorekeeperAuthenticated = true;
                 sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+            } else if (queryPwd === '3523' || queryAuth === 'assistant') {
+                isScorekeeperAuthenticated = true;
+                isAssistantScorekeeper = true;
+                sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+                sessionStorage.setItem('assistantRole', 'true');
             } else if (sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true') {
                 isScorekeeperAuthenticated = true;
+                if (sessionStorage.getItem('assistantRole') === 'true') {
+                    isAssistantScorekeeper = true;
+                }
             }
 
             if (queryLane) {
@@ -1123,7 +1132,16 @@
                 return;
             }
 
-            let isValid = (currentEnteredPin === SCOREKEEPER_PASSWORD || currentEnteredPin === '2222');
+            let isValid = false;
+            if (currentEnteredPin === SCOREKEEPER_PASSWORD || currentEnteredPin === '2222') {
+                isValid = true;
+                isAssistantScorekeeper = false;
+                sessionStorage.setItem('assistantRole', 'false');
+            } else if (currentEnteredPin === '3523') {
+                isValid = true;
+                isAssistantScorekeeper = true;
+                sessionStorage.setItem('assistantRole', 'true');
+            }
             
             if (!isValid && isConnectedToServer) {
                 try {
@@ -1171,7 +1189,9 @@
 
         function logoutScorekeeper() {
             isScorekeeperAuthenticated = false;
+            isAssistantScorekeeper = false;
             sessionStorage.removeItem(AUTH_STORAGE_KEY);
+            sessionStorage.removeItem('assistantRole');
             showToast('🔒 已安全登出，已切換回【一般人看榜模式】（只能看，不能改）', 'info');
             if (currentView === 'scorekeeper' || currentView === 'admin') {
                 currentView = 'dashboard';
@@ -3357,7 +3377,17 @@
                                     <span>•</span>
                                     <!-- 角色權限狀態標籤 (計分員 vs 一般人) -->
                                     ${isScorekeeperAuthenticated ? `
-                                        <span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-900 border border-emerald-400 px-3 py-1 rounded-full font-black text-xs shadow-xs">
+                                        ${isAssistantScorekeeper ? `
+                                            <span class="inline-flex items-center gap-1.5 bg-blue-100 text-blue-900 border border-blue-400 px-3 py-1 rounded-full font-black text-xs shadow-xs">
+                                                <span>📸</span> 助理計分員 (僅限照相)
+                                            </span>
+                                        ` : `
+                                            <span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-900 border border-emerald-400 px-3 py-1 rounded-full font-black text-xs shadow-xs">
+                                                <span class="w-2 h-2 rounded-full bg-emerald-600 animate-ping"></span>
+                                                <span>✏️</span> 計分員模式 (可修改分數)
+                                            </span>
+                                        `}
+
                                             <span class="w-2 h-2 rounded-full bg-emerald-600 animate-ping"></span>
                                             <span>✏️</span> 計分員模式 (可修改分數)
                                         </span>
@@ -3670,7 +3700,7 @@
                                     ${player.name ? player.name : (player.nickname || '<span class="text-slate-300 font-normal italic text-xs">（留白）</span>')}
                                     ${hasName ? (isFemale ? '<span class="text-pink-600 text-xs">👩</span>' : '<span class="text-blue-600 text-xs">👨</span>') : ''}
                                     ${player.title ? `<span class="bg-amber-100 text-amber-800 px-1 py-0.2 rounded text-[10px] font-bold border border-amber-200">${player.title}</span>` : ''}
-                                    ${isScorekeeperAuthenticated && hasName ? `
+                                    ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) && hasName ? `
                                         <button onclick="openQuickScoreModal(${i}, ${player.id})" class="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white rounded text-[10px] font-black border border-blue-200 transition-all cursor-pointer shadow-2xs" title="計分員修改成績">✏️ 改分</button>
                                     ` : ''}
                                 </div>
@@ -3678,9 +3708,9 @@
                                     ${player.club || '未分配社團'}
                                 </div>
                             </td>
-                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 1)" title="計分員點擊可修改第 1 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}</td>
-                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 2)" title="計分員點擊可修改第 2 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}</td>
-                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 3)" title="計分員點擊可修改第 3 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}</td>
+                            <td ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `onclick="openQuickScoreModal(${i}, ${player.id}, 1)" title="計分員點擊可修改第 1 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}</td>
+                            <td ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `onclick="openQuickScoreModal(${i}, ${player.id}, 2)" title="計分員點擊可修改第 2 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}</td>
+                            <td ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `onclick="openQuickScoreModal(${i}, ${player.id}, 3)" title="計分員點擊可修改第 3 局分數" class="p-2 text-center text-slate-800 text-base font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-2 text-center text-slate-800 text-base font-bold"`}>${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}</td>
                             <td class="p-2 text-center font-black text-pink-700 text-sm bg-pink-50/50">
                                 ${bonus > 0 ? `+${bonus}` : '<span class="text-slate-300">-</span>'}
                             </td>
@@ -3717,7 +3747,7 @@
                             <td class="p-3 font-bold text-slate-900 align-middle">
                                 <div class="flex items-center gap-2">
                                     <span>${displayName}</span>
-                                    ${isScorekeeperAuthenticated && hasName ? `
+                                    ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) && hasName ? `
                                         <button onclick="openQuickScoreModal(${i}, ${player.id})" class="px-2 py-0.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white rounded text-[11px] font-black border border-blue-200 transition-all cursor-pointer shadow-2xs inline-flex items-center gap-0.5 shrink-0" title="計分員修改此選手成績">
                                             <span>✏️</span> 改分
                                         </button>
@@ -3736,17 +3766,17 @@
                             <td class="p-3 text-center align-middle">
                                 ${identityBadge}
                             </td>
-                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 1)" title="計分員點擊可修改第 1 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
+                            <td ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `onclick="openQuickScoreModal(${i}, ${player.id}, 1)" title="計分員點擊可修改第 1 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
                                 ${s1 !== null ? s1 : '<span class="text-slate-300">-</span>'}
-                                ${isScorekeeperAuthenticated ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
+                                ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
                             </td>
-                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 2)" title="計分員點擊可修改第 2 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
+                            <td ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `onclick="openQuickScoreModal(${i}, ${player.id}, 2)" title="計分員點擊可修改第 2 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
                                 ${s2 !== null ? s2 : '<span class="text-slate-300">-</span>'}
-                                ${isScorekeeperAuthenticated ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
+                                ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
                             </td>
-                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id}, 3)" title="計分員點擊可修改第 3 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
+                            <td ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `onclick="openQuickScoreModal(${i}, ${player.id}, 3)" title="計分員點擊可修改第 3 局分數" class="p-3 text-center text-slate-800 text-lg font-bold cursor-pointer hover:bg-blue-100 hover:text-blue-900 transition-colors group relative"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center text-slate-800 text-lg font-bold"`}>
                                 ${s3 !== null ? s3 : '<span class="text-slate-300">-</span>'}
-                                ${isScorekeeperAuthenticated ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
+                                ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? '<span class="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 ml-1">✏️</span>' : ''}
                             </td>
                             <td class="p-3 text-center font-black text-pink-700 text-base bg-pink-50/50">
                                 ${bonus > 0 ? `+${bonus}` : '<span class="text-slate-300">-</span>'}
@@ -3754,12 +3784,12 @@
                             <td class="p-3 text-center font-black text-2xl text-blue-700 bg-blue-50/50">
                                 ${total !== null ? total : '<span class="text-slate-300">-</span>'}
                             </td>
-                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id})" title="計分員點擊可修改特別獎項" class="p-3 text-center align-middle cursor-pointer hover:bg-amber-100 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center align-middle"`}>
+                            <td ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `onclick="openQuickScoreModal(${i}, ${player.id})" title="計分員點擊可修改特別獎項" class="p-3 text-center align-middle cursor-pointer hover:bg-amber-100 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center align-middle"`}>
                                 ${hasName && player.turkeys > 0 
                                     ? `<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-black px-2.5 py-1 rounded-full border border-amber-300 text-xs">🦃 x ${player.turkeys}</span>` 
                                     : '<span class="text-slate-300">-</span>'}
                             </td>
-                            <td ${isScorekeeperAuthenticated ? `onclick="openQuickScoreModal(${i}, ${player.id})" title="計分員點擊可修改特別獎項" class="p-3 text-center align-middle cursor-pointer hover:bg-pink-100 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center align-middle"`}>
+                            <td ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `onclick="openQuickScoreModal(${i}, ${player.id})" title="計分員點擊可修改特別獎項" class="p-3 text-center align-middle cursor-pointer hover:bg-pink-100 transition-colors"` : `onclick="onScoreCellClickRestricted(${i}, ${player.id})" class="p-3 text-center align-middle"`}>
                                 ${hasName && player.flowers > 0 
                                     ? `<span class="inline-flex items-center gap-1 bg-pink-100 text-pink-800 font-black px-2.5 py-1 rounded-full border border-pink-300 text-xs">🌺 x ${player.flowers}</span>` 
                                     : '<span class="text-slate-300">-</span>'}
