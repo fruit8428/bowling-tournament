@@ -1165,7 +1165,34 @@
                 isValid = true;
                 isAssistantScorekeeper = true;
                 sessionStorage.setItem('assistantRole', 'true');
-            } else {
+            }
+            
+            if (!isValid && isConnectedToServer) {
+                try {
+                    const apiBase = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000';
+                    const res = await fetch(`${apiBase}/api/verify-scorekeeper`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: currentEnteredPin })
+                    });
+                    const result = await res.json();
+                    if (result.ok && result.valid) {
+                        isValid = true;
+                    }
+                } catch (e) {}
+            }
+
+            if (isValid) {
+                isScorekeeperAuthenticated = true;
+                sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+                const cb = authSuccessCallback;
+                closeAuthModal();
+                if (cb) {
+                    cb();
+                } else if (currentView === 'dashboard') {
+                    renderCurrentView();
+                    showToast('🔓 記分員授權成功！已開啟修改分數權限', 'success');
+                } else {
                     navigateTo('scorekeeper');
                     showToast('🔓 記分員授權成功！歡迎使用', 'success');
                 }
