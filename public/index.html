@@ -1715,7 +1715,7 @@
                         </button>
                         <div class="text-center">
                             <h1 class="text-lg font-black tracking-wide flex items-center justify-center gap-1.5">
-                                <span>📱 記分員登錄端</span>
+                                <span>${isAssistantScorekeeper ? '📸 助理計分員登錄端' : '✏️ 管理計分員端'}</span>
                             </h1>
                             <div class="text-[11px] text-blue-100 font-bold flex items-center justify-center gap-1" id="sk-conn-status">
                                 <span class="w-1.5 h-1.5 rounded-full ${isConnectedToServer || isCloudConnected ? 'bg-emerald-300 animate-ping' : 'bg-amber-300'}"></span>
