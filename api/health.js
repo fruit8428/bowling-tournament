@@ -10,7 +10,8 @@ module.exports = async (req, res) => {
         ok: true,
         time: new Date().toISOString(),
         supabase: { configured: !!(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY)), reachable: false, players: null },
-        gemini: { configured: !!(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY) }
+        gemini: { configured: !!(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY) },
+        openai: { configured: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY) }
     };
     if (out.supabase.configured) {
         try {

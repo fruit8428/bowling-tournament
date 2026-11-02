@@ -38,7 +38,7 @@ vercel deploy                          # 預覽網址測試
 vercel --prod                          # 正式網址
 ```
 
-需要的 Vercel 環境變數：`SUPABASE_URL`、`SUPABASE_SECRET_KEY`、`GEMINI_API_KEY`（或舊名 `GEMINI_KEY`）。
+需要的 Vercel 環境變數：`SUPABASE_URL`、`SUPABASE_SECRET_KEY`，以及至少一把 AI 金鑰：`OPENAI_API_KEY`（或舊名 `OPENAI_KEY`，優先使用 GPT-4o）或 `GEMINI_API_KEY`（或舊名 `GEMINI_KEY`）。
 
 ## 比賽當天流程
 

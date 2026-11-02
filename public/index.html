@@ -1393,11 +1393,14 @@
                 const res = await fetch(`${API_BASE}/health?_t=${Date.now()}`);
                 const h = await res.json();
                 const dbOk = h.supabase && h.supabase.reachable;
-                const aiOk = h.gemini && h.gemini.configured;
+                const engines = [];
+                if (h.openai && h.openai.configured) engines.push('OpenAI GPT-4o');
+                if (h.gemini && h.gemini.configured) engines.push('Google Gemini');
+                const aiOk = engines.length > 0;
                 box.innerHTML = `
                     <div class="flex flex-wrap gap-2 text-xs font-bold">
                         <span class="px-2.5 py-1 rounded-full border ${dbOk ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-rose-50 text-rose-700 border-rose-300'}">${dbOk ? '✅ 雲端資料庫連線正常' : '❌ 雲端資料庫無法連線'}</span>
-                        <span class="px-2.5 py-1 rounded-full border ${aiOk ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'}">${aiOk ? '✅ AI 拍照辨識已啟用 (Gemini)' : '⚠️ 伺服器未設定 Gemini 金鑰，拍照辨識停用'}</span>
+                        <span class="px-2.5 py-1 rounded-full border ${aiOk ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'}">${aiOk ? '✅ AI 拍照辨識已啟用 (' + engines.join(' → ') + ')' : '⚠️ 伺服器未設定 AI 金鑰，拍照辨識停用'}</span>
                         <span class="px-2.5 py-1 rounded-full border ${isRealtimeConnected ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'}">${isRealtimeConnected ? '✅ 即時同步連線中' : '⚠️ 即時同步未連線'}</span>
                     </div>`;
             } catch (e) {
@@ -3869,7 +3872,7 @@
                                 <div class="col-span-1 sm:col-span-2 lg:col-span-5 pt-2 border-t border-slate-100">
                                     <label class="block text-xs font-black text-slate-700 mb-1.5 flex items-center gap-1">🩺 伺服器與 AI 辨識狀態</label>
                                     <div id="ai-status-box" class="min-h-[28px]"><span class="text-xs text-slate-400 font-bold">⏳ 檢查中...</span></div>
-                                    <p class="text-[11px] text-slate-400 mt-1.5">💡 AI 拍照辨識的 Gemini 金鑰由大會管理員設定在伺服器（Vercel 環境變數 GEMINI_API_KEY），手機端不需要也看不到金鑰。</p>
+                                    <p class="text-[11px] text-slate-400 mt-1.5">💡 AI 拍照辨識金鑰由大會管理員設定在伺服器（Vercel 環境變數 OPENAI_API_KEY 或 GEMINI_API_KEY，兩個都設時先用 OpenAI、失敗自動換 Gemini），手機端不需要也看不到金鑰。</p>
                                 </div>
                             </div>
                             <div class="flex justify-end pt-2">

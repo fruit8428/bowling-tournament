@@ -1,8 +1,9 @@
 /**
  * POST /api/recognize  { pin, lane, game, image: "data:image/jpeg;base64,..." }
- * 用 Google Gemini 視覺模型讀取計分板照片：球道號碼、4 位選手第 10 格最終總分、火雞與霸王花。
- * Gemini API Key 只放在伺服器環境變數，前端完全接觸不到。
- * 管理計分員與助理計分員皆可使用。
+ * 用 AI 視覺模型讀取計分板照片：球道號碼、4 位選手第 10 格最終總分、火雞與霸王花。
+ * 引擎順序：有設 OPENAI_API_KEY / OPENAI_KEY → 先用 OpenAI GPT-4o（舊版正式環境即用此）；
+ *           失敗或沒設 → 用 Google Gemini（GEMINI_API_KEY / GEMINI_KEY）。
+ * 所有金鑰只放在伺服器環境變數，前端完全接觸不到。管理計分員與助理計分員皆可使用。
  */
 const { GoogleGenAI, Type } = require('@google/genai');
 const { send, requirePost, getBody, requireRole, logAction, fetchLane, cleanScore } = require('./_lib');
@@ -44,6 +45,44 @@ const RESPONSE_SCHEMA = {
     required: ['p1_score', 'p2_score', 'p3_score', 'p4_score']
 };
 
+const OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini'];
+
+async function recognizeWithOpenAI(apiKey, base64, mimeType, selectedLane) {
+    let lastErr = null;
+    for (const model of OPENAI_MODELS) {
+        try {
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify({
+                    model,
+                    temperature: 0.1,
+                    max_tokens: 400,
+                    response_format: { type: 'json_object' },
+                    messages: [{
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: buildPrompt(selectedLane) + '\n輸出 JSON 欄位：lane, p1_score, p2_score, p3_score, p4_score, p1_turkeys..p4_turkeys, p1_flowers..p4_flowers, confidence, description。' },
+                            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' } }
+                        ]
+                    }]
+                })
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error((json.error && json.error.message) || `HTTP ${res.status}`);
+            let text = (json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) || '';
+            const m = text.match(/\{[\s\S]*\}/);
+            if (m) text = m[0];
+            const data = JSON.parse(text);
+            return { model: `OpenAI ${model}`, data, raw: text };
+        } catch (e) {
+            lastErr = e;
+            console.warn(`[recognize] ${model} 失敗:`, e.message);
+        }
+    }
+    throw lastErr || new Error('OpenAI 無回應');
+}
+
 async function recognizeWithGemini(apiKey, base64, mimeType, selectedLane) {
     const ai = new GoogleGenAI({ apiKey });
     let lastErr = null;
@@ -68,7 +107,7 @@ async function recognizeWithGemini(apiKey, base64, mimeType, selectedLane) {
             const m = text.match(/\{[\s\S]*\}/);
             if (m) text = m[0];
             const data = JSON.parse(text);
-            return { model, data, raw: text };
+            return { model: `Google ${model}`, data, raw: text };
         } catch (e) {
             lastErr = e;
             console.warn(`[recognize] ${model} 失敗:`, e.message);
@@ -83,8 +122,9 @@ module.exports = async (req, res) => {
     const role = await requireRole(req, res, body, ['admin', 'assistant']);
     if (!role) return;
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_KEY;
-    if (!apiKey) return send(res, 503, { ok: false, error: '伺服器尚未設定 Gemini API Key（GEMINI_API_KEY），無法使用拍照辨識，請改用手動輸入。' });
+    const openaiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_KEY;
+    if (!openaiKey && !geminiKey) return send(res, 503, { ok: false, error: '伺服器尚未設定 AI 金鑰（OPENAI_API_KEY 或 GEMINI_API_KEY），無法使用拍照辨識，請改用手動輸入。' });
 
     const selectedLane = parseInt(body.lane, 10) || 1;
     const selectedGame = parseInt(body.game, 10) || 1;
@@ -96,7 +136,16 @@ module.exports = async (req, res) => {
     if (base64.length > 6 * 1024 * 1024) return send(res, 413, { ok: false, error: '照片太大，請重新拍攝（系統會自動壓縮，若仍過大請換較低解析度）' });
 
     try {
-        const { model, data, raw } = await recognizeWithGemini(apiKey, base64, mimeType, selectedLane);
+        // 依序嘗試：OpenAI → Gemini（哪個有金鑰就試哪個；前者失敗自動換後者）
+        const engines = [];
+        if (openaiKey) engines.push(() => recognizeWithOpenAI(openaiKey, base64, mimeType, selectedLane));
+        if (geminiKey) engines.push(() => recognizeWithGemini(geminiKey, base64, mimeType, selectedLane));
+        let outcome = null, lastErr = null;
+        for (const run of engines) {
+            try { outcome = await run(); break; } catch (e) { lastErr = e; }
+        }
+        if (!outcome) throw lastErr || new Error('AI 無回應');
+        const { model, data, raw } = outcome;
 
         let detectedLane = parseInt(data.lane, 10);
         if (isNaN(detectedLane) || detectedLane < 1 || detectedLane > 60) detectedLane = selectedLane;
@@ -116,7 +165,7 @@ module.exports = async (req, res) => {
 
         return send(res, 200, {
             ok: true,
-            engine: `Google ${model}`,
+            engine: model,
             detectedLane,
             selectedLane,
             laneMatched: detectedLane === selectedLane,
@@ -130,8 +179,8 @@ module.exports = async (req, res) => {
         });
     } catch (e) {
         console.error('[recognize] 失敗:', e);
-        const msg = /API key|PERMISSION_DENIED|API_KEY_INVALID/i.test(e.message)
-            ? 'Gemini API Key 無效或已失效，請通知大會管理員更新金鑰；目前請改用手動輸入。'
+        const msg = /API key|PERMISSION_DENIED|API_KEY_INVALID|Incorrect API key|invalid_api_key|insufficient_quota/i.test(e.message)
+            ? 'AI 金鑰無效、過期或額度用完，請通知大會管理員更新金鑰；目前請改用手動輸入。'
             : ('AI 辨識失敗：' + e.message);
         await logAction({ lane: selectedLane, action: 'AI_RECOGNIZE_FAIL', details: e.message, role });
         return send(res, 502, { ok: false, error: msg });
