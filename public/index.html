@@ -10,8 +10,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
     <!-- SheetJS CDN (for client-side Excel / CSV parsing & fallback) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- QRCode CDN (for zero-latency instant offline QR generation) -->
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+    <!-- QR Code 產生器（純前端離線產生，不依賴外部服務） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
         body {
@@ -862,11 +862,17 @@
         function makeQrDataUrl(text, size = 300) {
             return new Promise((resolve) => {
                 const fallback = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}`;
-                if (typeof QRCode !== 'undefined' && QRCode.toDataURL) {
-                    QRCode.toDataURL(text, { width: size, margin: 2 }, (err, dataUrl) => resolve(!err && dataUrl ? dataUrl : fallback));
-                } else {
-                    resolve(fallback);
-                }
+                try {
+                    if (typeof qrcode === 'function') {
+                        const qr = qrcode(0, 'M');
+                        qr.addData(text);
+                        qr.make();
+                        const cell = Math.max(2, Math.floor(size / (qr.getModuleCount() + 8)));
+                        resolve(qr.createDataURL(cell, 4));
+                        return;
+                    }
+                } catch (e) { console.warn('QR 產生失敗，改用線上服務', e); }
+                resolve(fallback);
             });
         }
 
