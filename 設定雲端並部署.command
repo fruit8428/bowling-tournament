@@ -28,11 +28,20 @@ if ! bash setup/一鍵設定雲端.sh "$GEMINI_ARG" "$OPENAI_INPUT"; then
 fi
 
 echo
-echo "=== 部署預覽版到 Vercel（測試用網址）==="
-vercel deploy --yes 2>&1 | tail -15
-echo
-echo "========================================================"
-echo "✅ 完成。預覽網址請見上方（受 Vercel 登入保護，Claude 會用指令測試）。"
-echo "   正式網址要等測試完再由 Claude 確認後執行：vercel --prod"
-echo "========================================================"
+read -p "要直接部署到正式網址 bowling-tournament.vercel.app 嗎？(y = 正式 / 直接 Enter = 只部署預覽版)： " PROD_ANS
+if [ "$PROD_ANS" = "y" ] || [ "$PROD_ANS" = "Y" ]; then
+  echo "=== 部署到正式網址 ==="
+  vercel deploy --prod --yes 2>&1 | tail -8
+  echo
+  echo "========================================================"
+  echo "✅ 完成。正式網址：https://bowling-tournament.vercel.app"
+  echo "========================================================"
+else
+  echo "=== 部署預覽版到 Vercel（測試用網址）==="
+  vercel deploy --yes 2>&1 | tail -15
+  echo
+  echo "========================================================"
+  echo "✅ 完成。預覽網址請見上方（受 Vercel 登入保護，Claude 會用指令測試）。"
+  echo "========================================================"
+fi
 read -p "按 Enter 關閉此視窗..."

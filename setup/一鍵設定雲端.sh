@@ -30,12 +30,12 @@ rm -f .env.local
 echo "=== 3/3 設定 Vercel 環境變數（金鑰直接從 Supabase CLI 轉入，不會顯示在畫面）==="
 vercel env rm SUPABASE_URL production --yes >/dev/null 2>&1 || true
 vercel env rm SUPABASE_KEY production --yes >/dev/null 2>&1 || true
-SECRET_KEY=$(supabase projects api-keys --project-ref "$REF" --output-format json | python3 -c 'import json,sys; d=json.load(sys.stdin); print([k["api_key"] for k in d["keys"] if k["type"]=="secret"][0])')
+SECRET_KEY=$(supabase projects api-keys --project-ref "$REF" --reveal --output-format json | python3 -c 'import json,sys; d=json.load(sys.stdin); print([k["api_key"] for k in d["keys"] if k["type"]=="secret"][0])')
 for ENVN in production preview development; do
   vercel env rm SUPABASE_URL "$ENVN" --yes >/dev/null 2>&1 || true
   vercel env rm SUPABASE_SECRET_KEY "$ENVN" --yes >/dev/null 2>&1 || true
-  printf '%s' "$URL" | vercel env add SUPABASE_URL "$ENVN" >/dev/null && echo "  ✓ SUPABASE_URL → $ENVN"
-  printf '%s' "$SECRET_KEY" | vercel env add SUPABASE_SECRET_KEY "$ENVN" --sensitive >/dev/null && echo "  ✓ SUPABASE_SECRET_KEY → $ENVN"
+  if printf '%s' "$URL" | vercel env add SUPABASE_URL "$ENVN" >/dev/null 2>/tmp/venv_err; then echo "  ✓ SUPABASE_URL → $ENVN"; else echo "  ✗ SUPABASE_URL → $ENVN 失敗: $(tail -1 /tmp/venv_err)"; fi
+  if printf '%s' "$SECRET_KEY" | vercel env add SUPABASE_SECRET_KEY "$ENVN" --sensitive >/dev/null 2>/tmp/venv_err; then echo "  ✓ SUPABASE_SECRET_KEY → $ENVN"; else echo "  ✗ SUPABASE_SECRET_KEY → $ENVN 失敗: $(tail -1 /tmp/venv_err)"; fi
   if [ -n "$GEMINI_KEY_ARG" ]; then
     vercel env rm GEMINI_API_KEY "$ENVN" --yes >/dev/null 2>&1 || true
     printf '%s' "$GEMINI_KEY_ARG" | vercel env add GEMINI_API_KEY "$ENVN" --sensitive >/dev/null && echo "  ✓ GEMINI_API_KEY → $ENVN"
