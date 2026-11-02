@@ -118,7 +118,8 @@ alter table public.bowling_players replica identity full;
 insert into public.bowling_settings (key, value) values
   ('event_name', '國際扶輪3523地區 2026-27年度地區保齡球聯誼賽'),
   ('female_bonus_per_game', '12'),
-  ('total_lanes', '40')
+  ('total_lanes', '40'),
+  ('ocr_enabled', '0')   -- 拍照辨識登錄：預設關閉，管理後台可開啟
 on conflict (key) do nothing;
 
 insert into public.bowling_auth (role, pin) values

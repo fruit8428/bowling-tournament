@@ -517,6 +517,7 @@
         let TOTAL_LANES = 40;
         let PLAYERS_PER_LANE = 4;
         let FEMALE_BONUS = 12;              // 女子「每局」加分（比賽辦法：不分年齡，每局加 12 分）
+        let OCR_ENABLED = false;            // 拍照辨識登錄：預設關閉，由管理後台開關（設定鍵 ocr_enabled）
         let EVENT_NAME = '保齡球聯誼賽';
         let currentOcrFile = null;
 
@@ -550,7 +551,7 @@
 
         // 記分員端狀態
         let skSelectedLane = '1';
-        let skSelectedGame = '1';
+        let skSelectedGame = '';            // 空字串 = 尚未選局數；每次登錄前都必須先點選，避免蓋錯局
         let isSkLocked = false;
 
         // 大會總表看板狀態
@@ -686,6 +687,7 @@
                 const n = parseInt(settings.total_lanes, 10);
                 if (!isNaN(n) && n >= 1 && n <= 60) TOTAL_LANES = n;
             }
+            if (settings.ocr_enabled !== undefined) OCR_ENABLED = String(settings.ocr_enabled) === '1';
             document.title = `${EVENT_NAME} — 即時計分看板`;
         }
 
@@ -891,7 +893,7 @@
                     cb();
                 } else if (currentView === 'dashboard') {
                     renderCurrentView();
-                    showToast(role === 'admin' ? '🔓 管理計分員授權成功！已開啟修改分數權限' : '🔓 助理計分員授權成功！可拍照登錄成績', 'success');
+                    showToast(role === 'admin' ? '🔓 管理計分員授權成功！已開啟修改分數權限' : '🔓 助理計分員授權成功！請先選局數再登錄分數', 'success');
                 } else {
                     navigateTo('scorekeeper');
                     showToast('🔓 授權成功！歡迎使用', 'success');
@@ -1103,10 +1105,12 @@
             const btn = document.getElementById('sk-save-btn');
             if (!btn) return;
             const lane = parseInt(skSelectedLane, 10);
-            if (failed) {
+            if (!skSelectedGame) {
+                btn.innerHTML = '<span>⚠️</span> 請先點選局數再登錄分數';
+            } else if (failed) {
                 btn.innerHTML = `<span>⚠️</span> 尚未同步，點此重新儲存第 ${skSelectedGame} 局`;
             } else if (dirtyLanes.has(lane)) {
-                btn.innerHTML = `<span>⏳</span> 正在同步第 ${skSelectedGame} 局...`;
+                btn.innerHTML = isAssistantScorekeeper ? `<span>📥</span> 儲存第 ${skSelectedGame} 局全道成績（尚未送出）` : `<span>⏳</span> 正在同步第 ${skSelectedGame} 局...`;
             } else {
                 btn.innerHTML = `<span>📥</span> 儲存第 ${skSelectedGame} 局全道成績`;
             }
@@ -1122,8 +1126,8 @@
         }
 
         function updatePlayerScoreLive(lane, pId, field, value) {
-            if (isAssistantScorekeeper) { showToast('❌ 助理計分員無手動修改權限', 'error'); return; }
             if (!isScorekeeperAuthenticated) { showToast('🔑 請先登入計分員', 'error'); return; }
+            if (!skSelectedGame) { showToast('⚠️ 請先點選「局數」再輸入分數', 'error'); return; }
             let num = value === '' ? '' : parseInt(value, 10);
             if (num !== '') {
                 if (isNaN(num)) num = '';
@@ -1133,7 +1137,13 @@
             const player = lanesData[lane]?.find(p => String(p.id) === String(pId));
             if (!player) return;
             player[field] = num;
-            scheduleLaneSave(lane, 1200);
+            if (isAssistantScorekeeper) {
+                // 助理：只先記在手機上（期間不被遠端覆蓋），按「儲存」時走只寫單局的 /api/scores
+                markLaneDirty(lane);
+                updateSaveButtonState();
+            } else {
+                scheduleLaneSave(lane, 1200);
+            }
         }
 
         function adjustScore(lane, pId, field, diff) {
@@ -1150,12 +1160,12 @@
         }
 
         async function saveScorekeeperData() {
-            if (isAssistantScorekeeper) { showToast('❌ 助理計分員請使用「拍照辨識登錄」', 'error'); return; }
-            if (!isScorekeeperAuthenticated) { openAuthModal('🔑 請輸入【管理計分員】密碼：', () => saveScorekeeperData()); return; }
+            if (!isScorekeeperAuthenticated) { openAuthModal('🔑 請輸入計分員密碼：', () => saveScorekeeperData()); return; }
             if (isSkLocked) return;
+            if (!skSelectedGame) { showToast('⚠️ 請先點選要儲存的「局數」', 'error'); return; }
 
             const targetLane = parseInt(skSelectedLane, 10) || 1;
-            const game = parseInt(skSelectedGame, 10) || 1;
+            const game = parseInt(skSelectedGame, 10);
             const gameField = `g${game}`;
 
             // 直接從輸入框抓最新值（手機上有時 change 事件還沒觸發就按了儲存）
@@ -1176,10 +1186,30 @@
             markLaneDirty(targetLane);
             const btn = document.getElementById('sk-save-btn');
             if (btn) btn.innerHTML = '<span>⏳</span> 儲存中...';
-            const ok = await flushLaneSave(targetLane);
+
+            let ok = false;
+            if (isAssistantScorekeeper) {
+                // 助理：只寫「這一局」的分數與獎項（空白不覆蓋既有成績），名單欄位不動
+                const players = (lanesData[targetLane] || []).map(p => ({
+                    id: p.id,
+                    score: p[gameField] === '' || p[gameField] === null || p[gameField] === undefined ? '' : p[gameField],
+                    turkeys: p.turkeys || 0,
+                    flowers: p.flowers || 0
+                }));
+                try {
+                    const r = await apiPost('scores', { lane: targetLane, game, players });
+                    if (r.players) lanesData[targetLane] = r.players;
+                    dirtyLanes.delete(targetLane);
+                    ok = true;
+                } catch (e) { updateSaveButtonState(true); }
+            } else {
+                ok = await flushLaneSave(targetLane);
+            }
             if (ok) {
-                renderScorekeeperPlayers();
-                showToast(`✅ 第 ${targetLane} 道第 ${game} 局成績已儲存！全場即時同步`, 'success');
+                // 存完就把局數清掉：下一次登錄一定要重新點選，避免忘了切局而把上一局蓋掉
+                skSelectedGame = '';
+                renderCurrentView();
+                showToast(`✅ 第 ${targetLane} 道第 ${game} 局成績已儲存！全場即時同步。下一次請重新點選局數`, 'success');
             }
         }
 
@@ -1198,10 +1228,16 @@
             });
         }
 
+        function showOcrDisabledHint() {
+            showToast('⏸️ 拍照辨識功能目前暫停使用，請改用手動輸入；管理者可在後台「賽事設定」重新開啟', 'info');
+        }
+
         async function handleScoreboardPhotoUpload(input) {
             if (!input || !input.files || input.files.length === 0) return;
             const originalFile = input.files[0];
             input.value = '';
+            if (!OCR_ENABLED) { showOcrDisabledHint(); return; }
+            if (!skSelectedGame) { showToast('⚠️ 請先點選「局數」再拍照辨識', 'error'); return; }
 
             if (!isScorekeeperAuthenticated) {
                 openAuthModal('🔑 請輸入計分員授權密碼：', () => handleScoreboardPhotoUpload({ files: [originalFile], value: '' }));
@@ -1378,7 +1414,8 @@
                     settings: {
                         event_name: name,
                         female_bonus_per_game: bonus,
-                        total_lanes: lanes
+                        total_lanes: lanes,
+                        ocr_enabled: document.getElementById('setting-ocr-enabled')?.value
                     },
                     admin_pin: adminPin || undefined,
                     assistant_pin: assistantPin || undefined
@@ -2320,7 +2357,7 @@
                         </button>
                         <div class="text-center">
                             <h1 class="text-lg font-black tracking-wide flex items-center justify-center gap-1.5">
-                                <span>${isAssistantScorekeeper ? '📸 助理計分員登錄端' : '✏️ 管理計分員端'}</span>
+                                <span>${isAssistantScorekeeper ? '✍️ 助理計分員登錄端' : '✏️ 管理計分員端'}</span>
                             </h1>
                             <div class="text-[11px] text-blue-100 font-bold flex items-center justify-center gap-1" id="sk-conn-status">
                                 <span class="w-1.5 h-1.5 rounded-full ${isRealtimeConnected ? 'bg-emerald-300 animate-ping' : 'bg-amber-300'}"></span>
@@ -2360,16 +2397,17 @@
                             <!-- 局數切換 -->
                             <div>
                                 <label class="text-xs font-black uppercase text-slate-500 tracking-wider block mb-2">
-                                    🎯 目前登錄局數
+                                    🎯 目前登錄局數 ${skSelectedGame ? `<span class="normal-case text-blue-700">— 第 ${skSelectedGame} 局</span>` : '<span class="normal-case text-rose-600 animate-pulse">— 請先點選局數</span>'}
                                 </label>
-                                <div class="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-2xl">
+                                <div class="grid grid-cols-3 gap-2 p-1.5 rounded-2xl ${skSelectedGame ? 'bg-slate-100' : 'bg-rose-50 ring-2 ring-rose-400'}">
                                     ${[1, 2, 3].map(game => `
                                         <button onclick="changeSkGame('${game}')" 
-                                                class="py-3 rounded-xl font-black text-sm sm:text-base transition-all ${skSelectedGame == game ? 'bg-white text-blue-600 shadow-md scale-[1.02]' : 'text-slate-600 hover:text-slate-900'}">
+                                                class="py-3 rounded-xl font-black text-sm sm:text-base transition-all ${skSelectedGame == game ? 'bg-blue-600 text-white shadow-md scale-[1.02]' : (skSelectedGame ? 'text-slate-500 hover:text-slate-900' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-100')}">
                                             第 ${game} 局
                                         </button>
                                     `).join('')}
                                 </div>
+                                ${skSelectedGame ? '' : '<p class="text-[11px] text-rose-600 font-bold mt-2">⚠️ 尚未選擇局數：分數欄位已鎖定，請先點選要登錄的局數（每次儲存後都要重新點選）。</p>'}
                             </div>
 
 
@@ -2384,34 +2422,34 @@
                                     <span class="text-xl p-1.5 bg-blue-500/30 rounded-xl">⚡</span>
                                     <div>
                                         <h3 class="text-sm sm:text-base font-black tracking-wide">計分方式二選一</h3>
-                                        <p class="text-[11px] text-blue-200">支援「拍照自動辨識成績」與「手動輸入」</p>
+                                        <p class="text-[11px] text-blue-200">${OCR_ENABLED ? '支援「拍照自動辨識成績」與「手動輸入」' : '目前只開放「手動輸入」，拍照辨識暫停'}</p>
                                     </div>
                                 </div>
-                                <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-black px-2.5 py-1 rounded-full">
-                                    AI 智慧辨識支援
+                                <span class="${OCR_ENABLED ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30' : 'bg-slate-500/30 text-slate-300 border-slate-400/30'} border text-[10px] font-black px-2.5 py-1 rounded-full">
+                                    ${OCR_ENABLED ? 'AI 智慧辨識支援' : '拍照辨識暫停使用'}
                                 </span>
                             </div>
 
                             <!-- 拍照辨識一鍵拍照按鈕組 -->
-                            <div class="space-y-2">
+                            <div class="space-y-2 ${OCR_ENABLED ? '' : 'opacity-40 grayscale select-none'}" title="${OCR_ENABLED ? '' : '拍照辨識功能目前暫停使用，管理者可在後台開啟'}">
                                 <div class="text-xs font-black text-blue-100 flex items-center gap-1.5">
-                                    <span>📸</span> 方式二：手機拍完賽照片直接辨識登錄
+                                    <span>📸</span> 方式二：手機拍完賽照片直接辨識登錄 ${OCR_ENABLED ? '' : '<span class="ml-1 bg-white/20 px-2 py-0.5 rounded-full text-[10px]">暫停使用</span>'}
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    <!-- 手機開啟相機拍照 -->
-                                    <label class="cursor-pointer bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white py-3 px-3.5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all text-center">
-                                        <input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleScoreboardPhotoUpload(this)">
+                                    <!-- 手機開啟相機拍照（功能關閉時只顯示、不可點） -->
+                                    <label onclick="${OCR_ENABLED ? '' : 'showOcrDisabledHint(); return false;'}" class="${OCR_ENABLED ? 'cursor-pointer hover:bg-emerald-500 active:scale-98' : 'cursor-not-allowed'} bg-emerald-600 text-white py-3 px-3.5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all text-center">
+                                        ${OCR_ENABLED ? '<input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleScoreboardPhotoUpload(this)">' : ''}
                                         <span class="text-base">📷</span> 立即拍照辨識登錄
                                     </label>
 
                                     <!-- 從相簿或電腦選取檔案 -->
-                                    <label class="cursor-pointer bg-white/15 hover:bg-white/25 active:scale-98 border border-white/20 text-white py-3 px-3.5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all text-center">
-                                        <input type="file" accept="image/*" class="hidden" onchange="handleScoreboardPhotoUpload(this)">
+                                    <label onclick="${OCR_ENABLED ? '' : 'showOcrDisabledHint(); return false;'}" class="${OCR_ENABLED ? 'cursor-pointer hover:bg-white/25 active:scale-98' : 'cursor-not-allowed'} bg-white/15 border border-white/20 text-white py-3 px-3.5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all text-center">
+                                        ${OCR_ENABLED ? '<input type="file" accept="image/*" class="hidden" onchange="handleScoreboardPhotoUpload(this)">' : ''}
                                         <span class="text-base">🖼️</span> 從相簿選取照片
                                     </label>
                                 </div>
                                 <div class="text-[10px] text-blue-200/80 text-center">
-                                    💡 拍下包含「上方球道數字號碼牌」與「電視螢幕 10 局完賽分數」之照片即可自動填入 4 位選手成績
+                                    ${OCR_ENABLED ? '💡 拍下包含「上方球道數字號碼牌」與「電視螢幕 10 局完賽分數」之照片即可自動填入 4 位選手成績' : '⏸️ 本屆暫不使用拍照辨識，請改用下方「方式一」手動填入分數（管理者可於後台重新開啟）'}
                                 </div>
                             </div>
 
@@ -2438,9 +2476,9 @@
                             </div>
                             
                             <button onclick="saveScorekeeperData()" id="sk-save-btn"
-                                    ${isAssistantScorekeeper ? 'disabled' : ''}
-                                    class="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg transition-all ${isSkLocked ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-98 shadow-emerald-600/30'} flex items-center justify-center gap-2">
-                                <span>📥</span> 儲存第 ${skSelectedGame} 局全道成績
+                                    ${(isSkLocked || !skSelectedGame) ? 'disabled' : ''}
+                                    class="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg transition-all ${(isSkLocked || !skSelectedGame) ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-98 shadow-emerald-600/30'} flex items-center justify-center gap-2">
+                                ${skSelectedGame ? `<span>📥</span> 儲存第 ${skSelectedGame} 局全道成績` : '<span>⚠️</span> 請先點選局數再登錄分數'}
                             </button>
                         </div>
                     </div>
@@ -2451,6 +2489,7 @@
 
         function changeSkLane(lane) {
             skSelectedLane = String(lane);
+            skSelectedGame = '';   // 換道後必須重新點選局數，避免沿用上一道的局數
             renderCurrentView();
         }
 
@@ -2470,10 +2509,15 @@
             if (!container) return;
 
             const players = lanesData[skSelectedLane];
+            const scoreLocked = !skSelectedGame;   // 沒選局數 → 分數與獎項欄位全部鎖定
             let html = `
+                ${scoreLocked ? `
+                <div class="bg-rose-50 border-2 border-rose-300 rounded-2xl p-3 text-center text-rose-700 font-black text-sm">
+                    🔒 分數欄位已鎖定 — 請先在上方點選「第 1 / 2 / 3 局」
+                </div>` : ''}
                 <div class="flex items-center justify-between border-b-2 border-slate-200 pb-2 px-1">
                     <h2 class="text-base font-black text-slate-800 flex items-center gap-2">
-                        <span>🎳</span> 第 ${skSelectedLane} 號球道 — 第 ${skSelectedGame} 局
+                        <span>🎳</span> 第 ${skSelectedLane} 號球道 — ${skSelectedGame ? `第 ${skSelectedGame} 局` : '<span class="text-rose-600">尚未選局數</span>'}
                     </h2>
                     <span class="text-xs font-bold text-slate-500">共 ${players.length} 位選手</span>
                 </div>
@@ -2568,27 +2612,27 @@
                         <!-- 分數輸入區 (明亮大數字) -->
                         <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 mb-4">
                             <div class="flex items-center gap-3">
-                                <label class="font-black text-slate-700 text-sm whitespace-nowrap">第 ${skSelectedGame} 局分數：</label>
+                                <label class="font-black text-slate-700 text-sm whitespace-nowrap">${skSelectedGame ? `第 ${skSelectedGame} 局分數：` : '分數（鎖定）：'}</label>
                                 <input type="number" min="0" max="300" 
                                     id="sk-score-p${player.id}"
                                     data-player-id="${player.id}"
                                     data-player-idx="${pIndex}"
                                     autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric"
-                                    ${isAssistantScorekeeper ? 'disabled' : ''}
-                                    value="${scoreVal !== undefined && scoreVal !== null ? scoreVal : ''}" 
+                                    ${scoreLocked ? 'disabled' : ''}
+                                    value="${scoreLocked ? '' : (scoreVal !== undefined && scoreVal !== null ? scoreVal : '')}" 
                                     oninput="updatePlayerScoreLive(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', this.value)"
                                     onchange="updatePlayerScoreLive(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', this.value)" 
-                                    placeholder="0 - 300" 
-                                    class="flex-1 p-2.5 border-2 border-blue-300 text-2xl text-center rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-100 font-black text-blue-950 bg-white transition-all shadow-inner">
+                                    placeholder="${scoreLocked ? '先選局數' : '0 - 300'}" 
+                                    class="flex-1 p-2.5 border-2 text-2xl text-center rounded-xl font-black transition-all shadow-inner ${scoreLocked ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed' : 'border-blue-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-blue-950 bg-white'}">
                             </div>
                             
                             <!-- 快速加減分小按鈕 -->
                             <div class="flex items-center justify-end gap-1.5 mt-2.5 pt-2.5 border-t border-slate-200 no-print">
-                                <button type="button" ${isAssistantScorekeeper ? 'disabled' : ''} onclick="adjustScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', -10)" class="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">-10</button>
-                                <button type="button" ${isAssistantScorekeeper ? 'disabled' : ''} onclick="adjustScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 10)" class="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">+10</button>
-                                <button type="button" ${isAssistantScorekeeper ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 200)" class="px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-lg text-xs font-black text-blue-700 hover:bg-blue-100 active:scale-95 shadow-sm">200分</button>
-                                <button type="button" ${isAssistantScorekeeper ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 300)" class="px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-xs font-black text-amber-800 hover:bg-amber-100 active:scale-95 shadow-sm">滿分300</button>
-                                <button type="button" ${isAssistantScorekeeper ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', '')" class="px-2.5 py-1 bg-rose-50 border border-rose-200 rounded-lg text-xs font-black text-rose-700 hover:bg-rose-100 active:scale-95 shadow-sm">清除</button>
+                                <button type="button" ${scoreLocked ? 'disabled' : ''} onclick="adjustScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', -10)" class="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">-10</button>
+                                <button type="button" ${scoreLocked ? 'disabled' : ''} onclick="adjustScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 10)" class="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-slate-100 active:scale-95 shadow-sm">+10</button>
+                                <button type="button" ${scoreLocked ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 200)" class="px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-lg text-xs font-black text-blue-700 hover:bg-blue-100 active:scale-95 shadow-sm">200分</button>
+                                <button type="button" ${scoreLocked ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', 300)" class="px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-xs font-black text-amber-800 hover:bg-amber-100 active:scale-95 shadow-sm">滿分300</button>
+                                <button type="button" ${scoreLocked ? 'disabled' : ''} onclick="setQuickScore(${skSelectedLane}, ${player.id}, 'g${skSelectedGame}', '')" class="px-2.5 py-1 bg-rose-50 border border-rose-200 rounded-lg text-xs font-black text-rose-700 hover:bg-rose-100 active:scale-95 shadow-sm">清除</button>
                             </div>
                         </div>
 
@@ -2599,8 +2643,8 @@
                                     🦃 火雞 (Turkey): <span class="text-sm font-black text-amber-700">${player.turkeys || 0}</span>
                                 </span>
                                 <div class="flex space-x-2 w-full">
-                                    <button ${isAssistantScorekeeper ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'turkeys', -1)" class="flex-1 bg-white border border-amber-300 text-amber-800 rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-amber-100 shadow-sm">-</button>
-                                    <button ${isAssistantScorekeeper ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'turkeys', 1)" class="flex-1 bg-amber-500 text-white rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-amber-600 shadow-sm">+</button>
+                                    <button ${scoreLocked ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'turkeys', -1)" class="flex-1 bg-white border border-amber-300 text-amber-800 rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-amber-100 shadow-sm">-</button>
+                                    <button ${scoreLocked ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'turkeys', 1)" class="flex-1 bg-amber-500 text-white rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-amber-600 shadow-sm">+</button>
                                 </div>
                             </div>
                             
@@ -2609,8 +2653,8 @@
                                     🌺 霸王花: <span class="text-sm font-black text-pink-700">${player.flowers || 0}</span>
                                 </span>
                                 <div class="flex space-x-2 w-full">
-                                    <button ${isAssistantScorekeeper ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'flowers', -1)" class="flex-1 bg-white border border-pink-300 text-pink-800 rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-pink-100 shadow-sm">-</button>
-                                    <button ${isAssistantScorekeeper ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'flowers', 1)" class="flex-1 bg-pink-500 text-white rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-pink-600 shadow-sm">+</button>
+                                    <button ${scoreLocked ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'flowers', -1)" class="flex-1 bg-white border border-pink-300 text-pink-800 rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-pink-100 shadow-sm">-</button>
+                                    <button ${scoreLocked ? 'disabled' : ''} onclick="updatePlayerAwardLive(${skSelectedLane}, ${player.id}, 'flowers', 1)" class="flex-1 bg-pink-500 text-white rounded-xl py-1 text-sm font-black active:scale-90 hover:bg-pink-600 shadow-sm">+</button>
                                 </div>
                             </div>
                         </div>
@@ -2643,12 +2687,14 @@
         }
 
         function updatePlayerAwardLive(lane, pId, type, increment) {
+            if (!skSelectedGame) { showToast('⚠️ 請先點選「局數」再登錄獎項', 'error'); return; }
             const player = lanesData[lane]?.find(p => String(p.id) === String(pId) || p.id === pId);
             if (player) {
                 let current = parseInt(player[type], 10) || 0;
                 let next = Math.max(0, current + increment);
                 player[type] = next;
-                updatePlayerFieldLive(lane, pId, type, next);
+                if (isAssistantScorekeeper) { markLaneDirty(lane); updateSaveButtonState(); }
+                else updatePlayerFieldLive(lane, pId, type, next);
                 renderScorekeeperPlayers();
             }
         }
@@ -4127,6 +4173,16 @@
                                 <div>
                                     <label class="block text-xs font-bold text-slate-500 mb-1">總球道數</label>
                                     <input type="number" id="setting-total-lanes" value="${TOTAL_LANES}" min="1" max="60" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-900 text-sm font-bold focus:border-blue-500 outline-none">
+                                </div>
+                                <div class="col-span-1 sm:col-span-2 lg:col-span-5 pt-2 border-t border-slate-100">
+                                    <label class="block text-xs font-black text-slate-700 mb-1.5 flex items-center gap-1">📸 拍照辨識登錄功能</label>
+                                    <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                                        <select id="setting-ocr-enabled" class="bg-slate-50 border-2 ${OCR_ENABLED ? 'border-emerald-400 text-emerald-700' : 'border-slate-300 text-slate-600'} rounded-xl p-2.5 text-sm font-black outline-none">
+                                            <option value="0" ${OCR_ENABLED ? '' : 'selected'}>⏸️ 關閉（按鈕反白、只能看不能用）</option>
+                                            <option value="1" ${OCR_ENABLED ? 'selected' : ''}>✅ 開啟（記分員可拍照自動辨識分數）</option>
+                                        </select>
+                                        <span class="text-[11px] text-slate-400">目前狀態：<b class="${OCR_ENABLED ? 'text-emerald-700' : 'text-slate-600'}">${OCR_ENABLED ? '已開啟' : '已關閉'}</b>。改完記得按右下「儲存設定」，所有記分員手機會立即套用。</span>
+                                    </div>
                                 </div>
                                 <div class="col-span-1 sm:col-span-2 lg:col-span-5 pt-2 border-t border-slate-100">
                                     <label class="block text-xs font-black text-slate-700 mb-1.5 flex items-center gap-1">🩺 伺服器與 AI 辨識狀態</label>

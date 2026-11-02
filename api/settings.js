@@ -1,5 +1,5 @@
 /**
- * POST /api/settings  { pin, settings: { event_name, female_bonus_per_game, total_lanes }, admin_pin?, assistant_pin? }
+ * POST /api/settings  { pin, settings: { event_name, female_bonus_per_game, total_lanes, ocr_enabled }, admin_pin?, assistant_pin? }
  * 更新公開賽事設定；若有帶 admin_pin / assistant_pin（4~8 位數字）則一併更改密碼。僅限管理計分員。
  */
 const { getSupabase, send, requirePost, getBody, requireRole, logAction, cleanText } = require('./_lib');
@@ -22,6 +22,10 @@ module.exports = async (req, res) => {
         if (s.total_lanes !== undefined) {
             const n = parseInt(s.total_lanes, 10);
             updates.push({ key: 'total_lanes', value: String(isNaN(n) ? 40 : Math.max(1, Math.min(60, n))) });
+        }
+        if (s.ocr_enabled !== undefined) {
+            // 拍照辨識開關：'1' 開啟、其他一律關閉
+            updates.push({ key: 'ocr_enabled', value: (String(s.ocr_enabled) === '1' || s.ocr_enabled === true) ? '1' : '0' });
         }
         if (updates.length) {
             const { error } = await sb.from('bowling_settings').upsert(updates, { onConflict: 'key' });
