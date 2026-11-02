@@ -2220,8 +2220,9 @@
                 });
                 return;
             }
-            // 離開記分員端 / 後台回到主選單或其他頁面 → 立即登出
-            if (view !== currentView && (currentView === 'scorekeeper' || currentView === 'admin' || view === 'home')) {
+            // 只有「回主選單」才登出；從後台 / 記分員端切到看板或排行榜，沿用這次已輸入的身分
+            // （進入記分員端與管理後台仍然每次都要重新輸入密碼，見上方）
+            if (view === 'home' && view !== currentView) {
                 setAuthState(null, '');
             }
 
