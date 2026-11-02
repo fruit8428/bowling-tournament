@@ -1319,7 +1319,7 @@
             try {
                 const arrayBuffer = await file.arrayBuffer();
                 const players = parseClientExcelBuffer(arrayBuffer);
-                if (!players || players.length === 0) throw new Error('未能在檔案中找到選手資料（需要「球道、序號、姓名」等欄位）');
+                if (!players || players.length === 0) throw new Error('未能在檔案中找到選手資料（需要「姓名」或「參賽名單」欄，以及球道/序號/社團/性別其中一欄）');
                 const named = players.filter(p => (p.name && p.name.trim()) || (p.nickname && p.nickname.trim())).length;
                 if (!confirm(`檔案中讀到 ${named} 位選手。\n\n匯入會「覆寫」全部 ${TOTAL_LANES} 球道的名單（檔案沒列到的席位會清成空白）。\n確定要匯入嗎？`)) {
                     throw new Error('已取消匯入');
@@ -4000,11 +4000,17 @@
                             tempMap.lane = colIdx;
                         } else if (clean.includes('序號') || clean === 'no' || clean === 'order' || clean.includes('順序') || clean.includes('選手編號') || clean === 'id') {
                             tempMap.player_order = colIdx;
-                        } else if (clean.includes('姓名') || clean.includes('選手名稱') || clean.includes('選手姓名') || clean === 'name' || clean === 'player') {
+                        } else if (clean.includes('姓名') || clean.includes('選手名稱') || clean.includes('選手姓名') || clean.includes('名單') || clean === 'name' || clean === 'player') {
+                            // 「參賽名單」「選手名單」這類欄名也視為姓名欄
                             tempMap.name = colIdx;
                         } else if (clean.includes('職稱') || clean.includes('英文職稱') || clean === 'title' || clean === 'role') {
                             tempMap.title = colIdx;
-                        } else if (clean === '社名' || clean.includes('英文名') || clean.includes('暱稱') || clean === 'nickname') {
+                        } else if (clean === '社名') {
+                            // 「社名」有兩種意思：舊範本指英文暱稱、新名單指社團名稱，掃完整列後再決定
+                            tempMap.clubNameCol = colIdx;
+                        } else if (clean === '分區') {
+                            tempMap.district = colIdx;
+                        } else if (clean.includes('英文名') || clean.includes('暱稱') || clean === 'nickname') {
                             tempMap.nickname = colIdx;
                         } else if (clean.includes('性別') || clean === 'gender' || clean === 'sex' || clean === '男女') {
                             tempMap.gender = colIdx;
@@ -4024,6 +4030,13 @@
                             tempMap.flowers = colIdx;
                         }
                     });
+
+                    // 決定「社名」欄的用途：已有其他暱稱欄（如 Nickname）→ 當社團名稱；否則維持舊範本的英文暱稱
+                    if (tempMap.clubNameCol !== undefined) {
+                        if (tempMap.nickname === undefined) tempMap.nickname = tempMap.clubNameCol;
+                        else if (tempMap.club === undefined) tempMap.club = tempMap.clubNameCol;
+                        delete tempMap.clubNameCol;
+                    }
 
                     if ((tempMap.name !== undefined || tempMap.nickname !== undefined) && (tempMap.lane !== undefined || tempMap.player_order !== undefined || tempMap.gender !== undefined || tempMap.club !== undefined)) {
                         headerRowIndex = r;
@@ -4056,13 +4069,21 @@
                         const nameRaw = colMap.name !== undefined ? String(row[colMap.name] || '').trim() : '';
                         if (nameRaw === '姓名' || nameRaw === '選手名稱' || nameRaw === 'Name' || nameRaw === '選手姓名') continue;
 
-                        const title = colMap.title !== undefined ? String(row[colMap.title] || '').trim() : '';
-                        const nickname = colMap.nickname !== undefined ? String(row[colMap.nickname] || '').trim() : '';
+                        let title = colMap.title !== undefined ? String(row[colMap.title] || '').trim() : '';
+                        let nickname = colMap.nickname !== undefined ? String(row[colMap.nickname] || '').trim() : '';
+                        // 檔案沒有職稱欄時，自動把 Nickname 前面的扶輪職稱（P、PE、PP、IPP、AG…）拆出來
+                        if (colMap.title === undefined && nickname) {
+                            const m = nickname.match(/^(IPP|PP|PE|PN|P|CP|VP|S|CGS|DS|DT|DG|DGE|DGN|PDG|AG|PAG|DAG)\s+(.+)$/);
+                            if (m) { title = m[1]; nickname = m[2].trim(); }
+                        }
                         const identity = colMap.identity !== undefined ? String(row[colMap.identity] || '').trim() : '社友';
 
                         const genderRaw = colMap.gender !== undefined ? String(row[colMap.gender] || '') : '男';
                         const gender = (genderRaw.includes('女') || genderRaw.toLowerCase().includes('f')) ? '女' : '男';
-                        const club = colMap.club !== undefined ? String(row[colMap.club] || '').trim() : '';
+                        let club = colMap.club !== undefined ? String(row[colMap.club] || '').trim() : '';
+                        // 有獨立的「分區」欄（如 01-2）時，接到社團名稱前面（01-2台北逸仙社），分區排行榜靠這個前綴判斷分區
+                        const district = colMap.district !== undefined ? String(row[colMap.district] || '').trim() : '';
+                        if (district && club && !/^0*\d+[-_]/.test(club)) club = `${district}${club}`.replace(/\s+/g, '');
 
                         const parseScore = (idx) => {
                             if (idx === undefined) return '';
