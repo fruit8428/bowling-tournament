@@ -1,30 +1,17 @@
 {
   "name": "bowling-tournament-system",
-  "version": "2.0.0",
-  "description": "保齡球賽事即時記分與大會總表系統 (WebSocket + SQLite + Excel Engine)",
-  "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "node src/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "version": "3.0.0",
+  "description": "國際扶輪 3523 地區保齡球聯誼賽 即時計分看板（Vercel Serverless + Supabase Realtime + Gemini 視覺辨識）",
+  "private": true,
+  "engines": {
+    "node": ">=20"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "scripts": {
+    "dev": "vercel dev",
+    "check": "node --check api/_lib.js && for f in api/*.js; do node --check $f || exit 1; done && echo OK"
+  },
   "dependencies": {
-    "@google/genai": "^2.19.0",
-    "@supabase/supabase-js": "^2.117.2",
-    "acorn": "^8.18.0",
-    "cors": "^2.8.6",
-    "dotenv": "^18.0.5",
-    "express": "^5.2.1",
-    "multer": "^2.2.0",
-    "openai": "^7.25.0",
-    "qrcode": "^1.5.4",
-    "sharp": "^0.35.4",
-    "socket.io": "^4.8.3",
-    "tesseract.js": "^7.0.0",
-    "xlsx": "^0.18.5"
+    "@google/genai": "^1.30.0",
+    "@supabase/supabase-js": "^2.118.0"
   }
 }

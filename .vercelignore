@@ -1,10 +1,7 @@
-node_modules/
 .git/
-data/
-*.db
-*.db-*
-eng.traineddata
-screenshot_*.png
-start.bat
-start.sh
+node_modules/
+docs/
+examples/
+supabase/
+*.md
 .DS_Store
