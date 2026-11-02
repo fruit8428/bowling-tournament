@@ -8,6 +8,9 @@
 # ============================================================
 cd "$(dirname "$0")"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# 把這次執行的所有畫面輸出同時記到 setup/last-run.log，方便 Claude 事後檢查（不含金鑰）
+mkdir -p setup
+exec > >(tee "setup/last-run.log") 2>&1
 
 echo "========================================================"
 echo "  保齡球即時計分看板 雲端設定與部署"
