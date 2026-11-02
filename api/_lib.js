@@ -221,6 +221,41 @@ async function backupPhoto({ lane, game, buffer, mimeType = 'image/jpeg' }) {
     return { path: latest, label: photoLabel(lane, game), historyPath: r2.error ? null : hist };
 }
 
+/** 列出某資料夾底下全部檔案鍵（遞迴一層：根目錄的 lane-xx 資料夾 + history） */
+async function listPhotoKeys(sb, prefix = '') {
+    const keys = [];
+    let offset = 0;
+    while (true) {
+        const { data, error } = await sb.storage.from(PHOTO_BUCKET).list(prefix, { limit: 1000, offset });
+        if (error) {
+            if (/not found|does not exist/i.test(error.message)) return keys;   // bucket 還沒建立
+            throw new Error(error.message);
+        }
+        for (const f of (data || [])) {
+            const full = prefix ? `${prefix}/${f.name}` : f.name;
+            if (f.id) keys.push(full);                         // 檔案
+            else keys.push(...await listPhotoKeys(sb, full));  // 資料夾 → 往下找
+        }
+        if (!data || data.length < 1000) break;
+        offset += 1000;
+    }
+    return keys;
+}
+
+/** 刪掉全部備份照片（最新版 + 歷史留存）；回傳刪除數量。清空分數 / 重置名冊時呼叫 */
+async function deleteAllPhotos() {
+    const sb = getSupabase();
+    const keys = await listPhotoKeys(sb, '');
+    let deleted = 0;
+    for (let i = 0; i < keys.length; i += 100) {
+        const batch = keys.slice(i, i + 100);
+        const { error } = await sb.storage.from(PHOTO_BUCKET).remove(batch);
+        if (error) throw new Error('刪除照片失敗: ' + error.message);
+        deleted += batch.length;
+    }
+    return deleted;
+}
+
 /** 記分員在核對視窗改了球道/局數 → 把已備份的照片複製到正確名稱 */
 async function relocatePhoto(fromPath, lane, game) {
     const expected = photoKey(lane, game);
@@ -236,5 +271,5 @@ async function relocatePhoto(fromPath, lane, game) {
 module.exports = {
     getSupabase, send, requirePost, getBody, resolveRole, requireRole, logAction,
     cleanScore, cleanCount, cleanText, cleanGender, cleanIdentity, toPlayerRow, fetchLane, rowToPlayer,
-    PHOTO_BUCKET, photoKey, photoLabel, parsePhotoKey, backupPhoto, relocatePhoto
+    PHOTO_BUCKET, photoKey, photoLabel, parsePhotoKey, backupPhoto, relocatePhoto, deleteAllPhotos
 };

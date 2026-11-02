@@ -2,16 +2,22 @@
  * POST /api/roster
  *   { pin, mode: 'import', players: [ {lane, id, name, title, nickname, gender, club, identity, g1, g2, g3, turkeys, flowers} ] }
  *     → 以匯入的 Excel 名冊覆寫全部球道（沒出現在檔案裡的席位會清成空白）
- *   { pin, mode: 'clear_scores' } → 清空全場分數與獎項，保留名單（比賽開始歸零）
- *   { pin, mode: 'reset' }        → 全部席位清成空白（名單也清掉）
+ *   { pin, mode: 'clear_scores' } → 清空全場分數與獎項 + 刪除全部計分板照片備份，保留名單（比賽開始歸零）
+ *   { pin, mode: 'reset' }        → 全部席位清成空白（名單也清掉）+ 刪除全部照片備份
  * 僅限管理計分員。
  */
-const { getSupabase, send, requirePost, getBody, requireRole, logAction, toPlayerRow } = require('./_lib');
+const { getSupabase, send, requirePost, getBody, requireRole, logAction, toPlayerRow, deleteAllPhotos } = require('./_lib');
 
 async function getTotalLanes(sb) {
     const { data } = await sb.from('bowling_settings').select('value').eq('key', 'total_lanes').maybeSingle();
     const n = parseInt(data && data.value, 10);
     return isNaN(n) ? 40 : Math.max(1, Math.min(60, n));
+}
+
+/** 刪照片失敗不應讓「清空分數」整個失敗，所以包起來回傳結果 */
+async function removePhotosSafely() {
+    try { return { deleted: await deleteAllPhotos(), error: '' }; }
+    catch (e) { console.warn('[roster] 刪除照片失敗:', e.message); return { deleted: 0, error: e.message }; }
 }
 
 module.exports = async (req, res) => {
@@ -30,8 +36,10 @@ module.exports = async (req, res) => {
                 .update({ g1: null, g2: null, g3: null, turkeys: 0, flowers: 0 })
                 .gte('lane', 1);
             if (error) throw new Error(error.message);
-            await logAction({ action: 'CLEAR_SCORES', details: '清空全場分數與獎項，保留名單', role });
-            return send(res, 200, { ok: true, message: '全場分數已歸零，選手名單保留' });
+            // 會清分數的都是測試資料，照片備份一併清掉，正式比賽從零開始
+            const photos = await removePhotosSafely();
+            await logAction({ action: 'CLEAR_SCORES', details: `清空全場分數與獎項，保留名單；刪除照片 ${photos.deleted} 張${photos.error ? '（失敗: ' + photos.error + '）' : ''}`, role });
+            return send(res, 200, { ok: true, photosDeleted: photos.deleted, photosError: photos.error, message: `全場分數已歸零，選手名單保留；已刪除 ${photos.deleted} 張計分板照片備份` + (photos.error ? `（照片刪除失敗：${photos.error}）` : '') });
         }
 
         if (mode === 'reset' || mode === 'import') {
@@ -61,11 +69,14 @@ module.exports = async (req, res) => {
             await sb.from('bowling_players').delete().gt('lane', totalLanes);
             const { error } = await sb.from('bowling_players').upsert(rows, { onConflict: 'lane,player_order' });
             if (error) throw new Error(error.message);
-            await logAction({ action: mode === 'import' ? 'ROSTER_IMPORT' : 'ROSTER_RESET', details: `lanes=${totalLanes} named=${named}`, role });
+            // 全部重置時照片也一併清掉（匯入名冊不動照片）
+            const photos = mode === 'reset' ? await removePhotosSafely() : { deleted: 0, error: '' };
+            await logAction({ action: mode === 'import' ? 'ROSTER_IMPORT' : 'ROSTER_RESET', details: `lanes=${totalLanes} named=${named}` + (mode === 'reset' ? ` photosDeleted=${photos.deleted}` : ''), role });
             return send(res, 200, {
                 ok: true,
                 count: named,
-                message: mode === 'import' ? `成功匯入 ${named} 位選手（${totalLanes} 球道 × 4 席位）` : `已清空全部 ${totalLanes} 球道名冊`
+                photosDeleted: photos.deleted,
+                message: mode === 'import' ? `成功匯入 ${named} 位選手（${totalLanes} 球道 × 4 席位）` : `已清空全部 ${totalLanes} 球道名冊，並刪除 ${photos.deleted} 張照片備份`
             });
         }
 

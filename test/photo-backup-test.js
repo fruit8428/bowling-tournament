@@ -54,7 +54,18 @@ async function post(path, body) {
     r = await post('photos', { pin: ADMIN, mode: 'list', lane: 39 });
     check('第 39 道清單有 第39球道第2局.JPG', (r.body.photos || []).some(p => p.lane === 39 && p.game === 2), r.body.photos);
 
-    console.log('6. 清理測試照片');
+    if (process.env.TEST_CLEAR_SCORES === '1') {
+        // ⚠️ 會把「全場分數」歸零（名單保留）。只在確定目前分數都是測試資料時加 TEST_CLEAR_SCORES=1 執行
+        console.log('6. 清空分數（保留名單）→ 照片應一併刪除');
+        r = await post('roster', { pin: ADMIN, mode: 'clear_scores' });
+        check('clear_scores 200 且回報 photosDeleted >= 2', r.status === 200 && r.body.photosDeleted >= 2, r.body);
+        r = await post('photos', { pin: ADMIN, mode: 'list', history: true });
+        check('清空後沒有任何照片', (r.body.photos || []).length === 0, r.body.photos);
+    } else {
+        console.log('6. （略過「清空分數連帶刪照片」測試；要測請加 TEST_CLEAR_SCORES=1，會把全場分數歸零）');
+    }
+
+    console.log('7. 清理測試照片（保險起見再刪一次）');
     r = await post('photos', { pin: ADMIN, mode: 'list', history: true });
     const toDelete = (r.body.photos || []).filter(p => (p.lane === 40 && p.game === 3) || (p.lane === 39 && p.game === 2)).map(p => p.path);
     toDelete.push('lane-40/game-3.JPG', 'lane-39/game-2.JPG');
