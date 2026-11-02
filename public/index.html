@@ -2811,7 +2811,7 @@
                                         👩 女子每局加分 +${FEMALE_BONUS}
                                     </span>
                                     <span>•</span>
-                                    <span class="text-slate-500 font-bold">共 ${TOTAL_LANES} 球道 / ${TOTAL_LANES * 4} 位選手</span>
+                                    <span class="text-slate-500 font-bold">共 ${TOTAL_LANES} 球道 / 已登記 ${getAllPlayersFlattened().filter(p => p.hasName).length} 位選手</span>
                                     <span>•</span>
                                     <!-- 角色權限狀態標籤 (計分員 vs 一般人) -->
                                     ${isScorekeeperAuthenticated ? `
