@@ -550,7 +550,7 @@
         let qrTargetRole = 'spectator';     // 'spectator' | 'scorekeeper'
 
         // 記分員端狀態
-        let skSelectedLane = '1';
+        let skSelectedLane = '';            // 空字串 = 尚未選球道；每次登錄（手動或拍照）前都必須先點選
         let skSelectedGame = '';            // 空字串 = 尚未選局數；每次登錄前都必須先點選，避免蓋錯局
         let isSkLocked = false;
 
@@ -1084,7 +1084,9 @@
             const btn = document.getElementById('sk-save-btn');
             if (!btn) return;
             const lane = parseInt(skSelectedLane, 10);
-            if (!skSelectedGame) {
+            if (!skSelectedLane) {
+                btn.innerHTML = '<span>⚠️</span> 請先選擇球道';
+            } else if (!skSelectedGame) {
                 btn.innerHTML = '<span>⚠️</span> 請先點選局數再登錄分數';
             } else if (failed) {
                 btn.innerHTML = `<span>⚠️</span> 尚未同步，點此重新儲存第 ${skSelectedGame} 局`;
@@ -1141,9 +1143,10 @@
         async function saveScorekeeperData() {
             if (!isScorekeeperAuthenticated) { openAuthModal('🔑 請輸入計分員密碼：', () => saveScorekeeperData()); return; }
             if (isSkLocked) return;
+            if (!skSelectedLane) { showToast('⚠️ 請先選擇球道', 'error'); return; }
             if (!skSelectedGame) { showToast('⚠️ 請先點選要儲存的「局數」', 'error'); return; }
 
-            const targetLane = parseInt(skSelectedLane, 10) || 1;
+            const targetLane = parseInt(skSelectedLane, 10);
             const game = parseInt(skSelectedGame, 10);
             const gameField = `g${game}`;
 
@@ -1185,10 +1188,12 @@
                 ok = await flushLaneSave(targetLane);
             }
             if (ok) {
-                // 存完就把局數清掉：下一次登錄一定要重新點選，避免忘了切局而把上一局蓋掉
+                // 存完就把球道與局數都清掉：下一次登錄一定要重新點選，避免拍錯道、蓋錯局
+                skSelectedLane = '';
                 skSelectedGame = '';
                 renderCurrentView();
-                showToast(`✅ 第 ${targetLane} 道第 ${game} 局成績已儲存！全場即時同步。下一次請重新點選局數`, 'success');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                showToast(`✅ 第 ${targetLane} 道第 ${game} 局成績已儲存！全場即時同步。下一次請重新選擇球道與局數`, 'success');
             }
         }
 
@@ -1216,6 +1221,7 @@
             const originalFile = input.files[0];
             input.value = '';
             if (!OCR_ENABLED) { showOcrDisabledHint(); return; }
+            if (!skSelectedLane) { showToast('⚠️ 請先選擇「球道」再拍照辨識', 'error'); return; }
             if (!skSelectedGame) { showToast('⚠️ 請先點選「局數」再拍照辨識', 'error'); return; }
 
             if (!isScorekeeperAuthenticated) {
@@ -1367,8 +1373,8 @@
                 const r = await apiPost('scores', { lane: targetLane, game, players: playersToSave, photoPath });
                 if (r.players) lanesData[targetLane] = r.players;
                 dirtyLanes.delete(targetLane);
-                skSelectedLane = String(targetLane);
-                skSelectedGame = '';   // 存完清掉局數，下一次必須重新點選
+                skSelectedLane = '';   // 存完清掉球道與局數，下一次必須重新點選
+                skSelectedGame = '';
                 closeOcrModal();
                 renderCurrentView();
                 showToast(`✅ 第 ${targetLane} 球道第 ${game} 局成績已儲存！全場即時同步${r.photo && r.photo.path ? `，照片存為 ${r.photo.label}` : ''}`, 'success');
@@ -2408,7 +2414,8 @@
         // 記分員端 (Scorekeeper Mode - 明亮清晰)
         // ==========================================
         function getScorekeeperHTML() {
-            let laneOptions = '';
+            const laneChosen = !!skSelectedLane;
+            let laneOptions = `<option value="" disabled ${laneChosen ? '' : 'selected'}>— 請先選擇球道 —</option>`;
             for (let i = 1; i <= TOTAL_LANES; i++) {
                 laneOptions += `<option value="${i}" ${skSelectedLane == i ? 'selected' : ''}>第 ${i} 號球道</option>`;
             }
@@ -2416,6 +2423,7 @@
             const curLaneNum = parseInt(skSelectedLane, 10) || 1;
             const prevLane = curLaneNum > 1 ? curLaneNum - 1 : TOTAL_LANES;
             const nextLane = curLaneNum < TOTAL_LANES ? curLaneNum + 1 : 1;
+            const photoReady = OCR_ENABLED && laneChosen && !!skSelectedGame;   // 球道與局數都選了才能拍照
 
             return `
                 <div class="max-w-lg mx-auto bg-slate-100 min-h-screen pb-32 shadow-xl relative flex flex-col">
@@ -2448,8 +2456,9 @@
                             <div>
                                 <div class="flex items-center justify-between mb-2">
                                     <label class="text-xs font-black uppercase text-slate-500 tracking-wider flex items-center gap-1">
-                                        <span>📍</span> 選擇負責球道 (1 ~ ${TOTAL_LANES})
+                                        <span>📍</span> 步驟 1：選擇球道 (1 ~ ${TOTAL_LANES}) ${laneChosen ? `<span class="normal-case text-blue-700">— 第 ${skSelectedLane} 道</span>` : '<span class="normal-case text-rose-600 animate-pulse">— 請先選擇</span>'}
                                     </label>
+                                    ${laneChosen ? `
                                     <div class="flex items-center gap-1.5">
                                         <button onclick="changeSkLane('${prevLane}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-lg text-xs font-black text-slate-600 transition-colors">
                                             ← 第 ${prevLane} 道
@@ -2457,27 +2466,28 @@
                                         <button onclick="changeSkLane('${nextLane}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-lg text-xs font-black text-slate-600 transition-colors">
                                             第 ${nextLane} 道 →
                                         </button>
-                                    </div>
+                                    </div>` : ''}
                                 </div>
-                                <select onchange="changeSkLane(this.value)" class="w-full p-3.5 border-2 border-blue-300 rounded-2xl focus:border-blue-600 outline-none text-xl font-black text-slate-900 bg-blue-50/50 cursor-pointer transition-colors shadow-inner">
+                                <select onchange="changeSkLane(this.value)" class="w-full p-3.5 border-2 rounded-2xl outline-none text-xl font-black cursor-pointer transition-colors shadow-inner ${laneChosen ? 'border-blue-300 focus:border-blue-600 text-slate-900 bg-blue-50/50' : 'border-rose-400 ring-2 ring-rose-200 text-rose-700 bg-rose-50'}">
                                     ${laneOptions}
                                 </select>
+                                ${laneChosen ? '' : '<p class="text-[11px] text-rose-600 font-bold mt-2">⚠️ 尚未選擇球道：請先選好球道，才能選局數、拍照或輸入分數（每次儲存後都要重新選）。</p>'}
                             </div>
 
                             <!-- 局數切換 -->
                             <div>
                                 <label class="text-xs font-black uppercase text-slate-500 tracking-wider block mb-2">
-                                    🎯 目前登錄局數 ${skSelectedGame ? `<span class="normal-case text-blue-700">— 第 ${skSelectedGame} 局</span>` : '<span class="normal-case text-rose-600 animate-pulse">— 請先點選局數</span>'}
+                                    🎯 步驟 2：選擇局數 ${!laneChosen ? '<span class="normal-case text-slate-400">— 先選球道</span>' : (skSelectedGame ? `<span class="normal-case text-blue-700">— 第 ${skSelectedGame} 局</span>` : '<span class="normal-case text-rose-600 animate-pulse">— 請先點選局數</span>')}
                                 </label>
-                                <div class="grid grid-cols-3 gap-2 p-1.5 rounded-2xl ${skSelectedGame ? 'bg-slate-100' : 'bg-rose-50 ring-2 ring-rose-400'}">
+                                <div class="grid grid-cols-3 gap-2 p-1.5 rounded-2xl ${!laneChosen ? 'bg-slate-100 opacity-50' : (skSelectedGame ? 'bg-slate-100' : 'bg-rose-50 ring-2 ring-rose-400')}">
                                     ${[1, 2, 3].map(game => `
-                                        <button onclick="changeSkGame('${game}')" 
-                                                class="py-3 rounded-xl font-black text-sm sm:text-base transition-all ${skSelectedGame == game ? 'bg-blue-600 text-white shadow-md scale-[1.02]' : (skSelectedGame ? 'text-slate-500 hover:text-slate-900' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-100')}">
+                                        <button onclick="changeSkGame('${game}')" ${laneChosen ? '' : 'disabled'}
+                                                class="py-3 rounded-xl font-black text-sm sm:text-base transition-all ${!laneChosen ? 'bg-white text-slate-400 cursor-not-allowed' : (skSelectedGame == game ? 'bg-blue-600 text-white shadow-md scale-[1.02]' : (skSelectedGame ? 'text-slate-500 hover:text-slate-900' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-100'))}">
                                             第 ${game} 局
                                         </button>
                                     `).join('')}
                                 </div>
-                                ${skSelectedGame ? '' : '<p class="text-[11px] text-rose-600 font-bold mt-2">⚠️ 尚未選擇局數：分數欄位已鎖定，請先點選要登錄的局數（每次儲存後都要重新點選）。</p>'}
+                                ${(laneChosen && !skSelectedGame) ? '<p class="text-[11px] text-rose-600 font-bold mt-2">⚠️ 尚未選擇局數：分數欄位已鎖定，請先點選要登錄的局數（每次儲存後都要重新點選）。</p>' : ''}
                             </div>
 
 
@@ -2501,25 +2511,25 @@
                             </div>
 
                             <!-- 拍照辨識一鍵拍照按鈕組 -->
-                            <div class="space-y-2 ${OCR_ENABLED ? '' : 'opacity-40 grayscale select-none'}" title="${OCR_ENABLED ? '' : '拍照辨識功能目前暫停使用，管理者可在後台開啟'}">
+                            <div class="space-y-2 ${OCR_ENABLED ? (photoReady ? '' : 'opacity-60 select-none') : 'opacity-40 grayscale select-none'}" title="${OCR_ENABLED ? (photoReady ? '' : '請先選擇球道與局數') : '拍照辨識功能目前暫停使用，管理者可在後台開啟'}">
                                 <div class="text-xs font-black text-blue-100 flex items-center gap-1.5">
                                     <span>📸</span> 方式二：手機拍完賽照片直接辨識登錄 ${OCR_ENABLED ? '' : '<span class="ml-1 bg-white/20 px-2 py-0.5 rounded-full text-[10px]">暫停使用</span>'}
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     <!-- 手機開啟相機拍照（功能關閉時只顯示、不可點） -->
-                                    <label onclick="${OCR_ENABLED ? '' : 'showOcrDisabledHint(); return false;'}" class="${OCR_ENABLED ? 'cursor-pointer hover:bg-emerald-500 active:scale-98' : 'cursor-not-allowed'} bg-emerald-600 text-white py-3 px-3.5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all text-center">
-                                        ${OCR_ENABLED ? '<input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleScoreboardPhotoUpload(this)">' : ''}
-                                        <span class="text-base">📷</span> 立即拍照辨識登錄
+                                    <label onclick="${OCR_ENABLED ? (photoReady ? '' : 'showPhotoNotReadyHint(); return false;') : 'showOcrDisabledHint(); return false;'}" class="${photoReady ? 'cursor-pointer hover:bg-emerald-500 active:scale-98' : 'cursor-not-allowed'} bg-emerald-600 text-white py-3 px-3.5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all text-center">
+                                        ${photoReady ? '<input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleScoreboardPhotoUpload(this)">' : ''}
+                                        <span class="text-base">📷</span> 立即拍照辨識登錄${OCR_ENABLED && !photoReady ? '（先選球道與局數）' : ''}
                                     </label>
 
                                     <!-- 從相簿或電腦選取檔案 -->
-                                    <label onclick="${OCR_ENABLED ? '' : 'showOcrDisabledHint(); return false;'}" class="${OCR_ENABLED ? 'cursor-pointer hover:bg-white/25 active:scale-98' : 'cursor-not-allowed'} bg-white/15 border border-white/20 text-white py-3 px-3.5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all text-center">
-                                        ${OCR_ENABLED ? '<input type="file" accept="image/*" class="hidden" onchange="handleScoreboardPhotoUpload(this)">' : ''}
+                                    <label onclick="${OCR_ENABLED ? (photoReady ? '' : 'showPhotoNotReadyHint(); return false;') : 'showOcrDisabledHint(); return false;'}" class="${photoReady ? 'cursor-pointer hover:bg-white/25 active:scale-98' : 'cursor-not-allowed'} bg-white/15 border border-white/20 text-white py-3 px-3.5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all text-center">
+                                        ${photoReady ? '<input type="file" accept="image/*" class="hidden" onchange="handleScoreboardPhotoUpload(this)">' : ''}
                                         <span class="text-base">🖼️</span> 從相簿選取照片
                                     </label>
                                 </div>
                                 <div class="text-[10px] text-blue-200/80 text-center">
-                                    ${OCR_ENABLED ? '💡 拍下包含「上方球道數字號碼牌」與「電視螢幕 10 局完賽分數」之照片即可自動填入 4 位選手成績' : '⏸️ 本屆暫不使用拍照辨識，請改用下方「方式一」手動填入分數（管理者可於後台重新開啟）'}
+                                    ${OCR_ENABLED ? (photoReady ? '💡 拍下包含「上方球道數字號碼牌」與「電視螢幕 10 局完賽分數」之照片即可自動填入 4 位選手成績' : '🔒 請先完成上方「步驟 1 選球道」與「步驟 2 選局數」，拍照按鈕才會開啟') : '⏸️ 本屆暫不使用拍照辨識，請改用下方「方式一」手動填入分數（管理者可於後台重新開啟）'}
                                 </div>
                             </div>
 
@@ -2528,7 +2538,7 @@
                         <!-- 方式一：選手成績輸入清單 (手動輸入與即時微調) -->
                         <div class="space-y-2">
                             <div class="text-xs font-black text-slate-500 flex items-center gap-1.5 px-1">
-                                <span>✍️</span> 方式一：選擇球道與局數後手動填入分數
+                                <span>✍️</span> 方式一：完成步驟 1、2 後手動填入分數
                             </div>
                             <div id="sk-players-list" class="space-y-4">
                                 <div class="text-center text-slate-400 py-8 font-bold">載入選手中...</div>
@@ -2546,9 +2556,9 @@
                             </div>
                             
                             <button onclick="saveScorekeeperData()" id="sk-save-btn"
-                                    ${(isSkLocked || !skSelectedGame) ? 'disabled' : ''}
-                                    class="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg transition-all ${(isSkLocked || !skSelectedGame) ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-98 shadow-emerald-600/30'} flex items-center justify-center gap-2">
-                                ${skSelectedGame ? `<span>📥</span> 儲存第 ${skSelectedGame} 局全道成績` : '<span>⚠️</span> 請先點選局數再登錄分數'}
+                                    ${(isSkLocked || !laneChosen || !skSelectedGame) ? 'disabled' : ''}
+                                    class="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg transition-all ${(isSkLocked || !laneChosen || !skSelectedGame) ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-98 shadow-emerald-600/30'} flex items-center justify-center gap-2">
+                                ${!laneChosen ? '<span>⚠️</span> 請先選擇球道' : (skSelectedGame ? `<span>📥</span> 儲存第 ${skSelectedLane} 道第 ${skSelectedGame} 局全道成績` : '<span>⚠️</span> 請先點選局數再登錄分數')}
                             </button>
                         </div>
                     </div>
@@ -2564,8 +2574,13 @@
         }
 
         function changeSkGame(game) {
+            if (!skSelectedLane) { showToast('⚠️ 請先選擇球道', 'error'); return; }
             skSelectedGame = String(game);
             renderCurrentView();
+        }
+
+        function showPhotoNotReadyHint() {
+            showToast(!skSelectedLane ? '⚠️ 請先選擇球道，再點選局數，才能拍照' : '⚠️ 請先點選局數，才能拍照', 'error');
         }
 
         function toggleSkLock() {
@@ -2574,9 +2589,16 @@
         }
 
         function renderScorekeeperPlayers() {
-            if (!skSelectedLane || !lanesData[skSelectedLane]) return;
             const container = document.getElementById('sk-players-list');
             if (!container) return;
+            if (!skSelectedLane) {
+                container.innerHTML = `
+                    <div class="bg-rose-50 border-2 border-rose-300 rounded-2xl p-4 text-center text-rose-700 font-black text-sm">
+                        🔒 請先在上方「步驟 1」選擇球道，才會顯示該道的 4 位選手
+                    </div>`;
+                return;
+            }
+            if (!lanesData[skSelectedLane]) return;
 
             const players = lanesData[skSelectedLane];
             const scoreLocked = !skSelectedGame;   // 沒選局數 → 分數與獎項欄位全部鎖定
