@@ -118,16 +118,16 @@
             <!-- 密碼輸入框 -->
             <div class="space-y-2 relative z-10">
                 <div class="relative">
+                    <!-- 唯讀顯示框：用下方數字鍵盤或實體鍵盤輸入，不會叫出手機軟體鍵盤（避免畫面跳動） -->
                     <input type="password" 
                            id="auth-pin-input" 
                            maxlength="4" 
-                           inputmode="numeric" 
-                           pattern="[0-9]*" 
+                           readonly
+                           inputmode="none" 
                            placeholder="••••"
                            autocomplete="off"
-                           oninput="onPinInputBoxChange(this.value)"
-                           onkeydown="if(event.key==='Enter') verifyScorekeeperPin();"
-                           class="w-full text-center tracking-[0.6em] text-3xl font-black py-3 px-4 bg-slate-50 border-2 border-blue-400 focus:border-blue-600 focus:bg-white rounded-2xl text-slate-900 outline-none shadow-inner transition-all placeholder:text-slate-300">
+                           tabindex="-1"
+                           class="w-full text-center tracking-[0.6em] text-3xl font-black py-3 px-4 bg-slate-50 border-2 border-blue-400 rounded-2xl text-slate-900 outline-none shadow-inner placeholder:text-slate-300 pointer-events-none">
                 </div>
 
                 <!-- 錯誤提示 -->
@@ -608,18 +608,11 @@
             window.addEventListener('online', () => { loadAllData(true); subscribeRealtime(); });
 
             if (queryView === 'scorekeeper') {
-                if (isScorekeeperAuthenticated) {
-                    currentView = 'scorekeeper';
-                } else {
-                    currentView = 'dashboard';
-                    setTimeout(() => openAuthModal('🔑 請輸入計分員授權密碼：', () => {
-                        currentView = 'scorekeeper';
-                        renderCurrentView();
-                    }), 300);
-                }
+                currentView = 'dashboard';
+                setTimeout(() => navigateTo('scorekeeper'), 300);
             } else if (queryView === 'admin') {
-                if (isScorekeeperAuthenticated && !isAssistantScorekeeper) currentView = 'admin';
-                else { currentView = 'dashboard'; setTimeout(() => navigateTo('admin'), 300); }
+                currentView = 'dashboard';
+                setTimeout(() => navigateTo('admin'), 300);
             } else if (['dashboard', 'leaderboard', 'home'].includes(queryView)) {
                 currentView = queryView;
             }
@@ -829,36 +822,20 @@
         // ==========================================
         // 身分認證
         // ==========================================
+        /** 登入狀態只存在記憶體：重新整理、回主選單、再次進入記分員端或後台都必須重新輸入密碼 */
         function setAuthState(role, pin) {
             currentRole = role || null;
             currentPin = role ? (pin || '') : '';
             isScorekeeperAuthenticated = !!role;
             isAssistantScorekeeper = role === 'assistant';
-            try {
-                if (role) localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ role, pin }));
-                else localStorage.removeItem(AUTH_STORAGE_KEY);
-            } catch (e) {}
         }
 
+        /** 舊版曾把密碼記在瀏覽器裡，啟動時順手清掉 */
         function restoreAuthFromStorage() {
-            try {
-                const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-                if (!raw) return;
-                const o = JSON.parse(raw);
-                if (o && o.pin && (o.role === 'admin' || o.role === 'assistant')) setAuthState(o.role, o.pin);
-            } catch (e) {}
+            try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (e) {}
         }
 
-        /** 頁面載入時用背景驗證先前記住的密碼（密碼被改掉時自動登出） */
-        async function verifyStoredAuthInBackground() {
-            if (!currentPin) return;
-            try {
-                const r = await apiPost('verify', { pin: currentPin }, { silent: true, skipAuth: true });
-                if (r && r.ok && r.role !== currentRole) { setAuthState(r.role, currentPin); renderCurrentView(); }
-            } catch (e) {
-                if (!e.network) { setAuthState(null, ''); renderCurrentView(); }
-            }
-        }
+        async function verifyStoredAuthInBackground() { /* 不再記住密碼，無事可做 */ }
 
         async function verifyScorekeeperPin() {
             const input = document.getElementById('auth-pin-input');
@@ -895,7 +872,10 @@
                     renderCurrentView();
                     showToast(role === 'admin' ? '🔓 管理計分員授權成功！已開啟修改分數權限' : '🔓 助理計分員授權成功！請先選局數再登錄分數', 'success');
                 } else {
-                    navigateTo('scorekeeper');
+                    // 直接切到記分員端（不走 navigateTo，否則會再被要求輸入一次密碼）
+                    currentView = 'scorekeeper';
+                    renderCurrentView();
+                    window.scrollTo({ top: 0 });
                     showToast('🔓 授權成功！歡迎使用', 'success');
                 }
             } else {
@@ -907,7 +887,6 @@
                 setTimeout(() => {
                     currentEnteredPin = '';
                     syncPinInputBox();
-                    if (input) input.focus();
                 }, 600);
             }
         }
@@ -1982,6 +1961,12 @@
         // 記分員密碼驗證邏輯 (PIN Pad Auth)
         // ==========================================
         function requestScorekeeperAccess(customPrompt = null, onSuccessCallback = null) {
+            // 從主選單進入一律重新輸入密碼；看板上的「計分員模式」才允許沿用本次看板的登入
+            if (!onSuccessCallback && (currentView === 'home' || !customPrompt)) {
+                setAuthState(null, '');
+                openAuthModal(customPrompt, onSuccessCallback);
+                return;
+            }
             if (isScorekeeperAuthenticated) {
                 if (isAssistantScorekeeper && customPrompt && customPrompt.includes('管理')) {
                     logoutScorekeeper();
@@ -2007,10 +1992,9 @@
             authSuccessCallback = onSuccessCallback || null;
             currentEnteredPin = '';
             const input = document.getElementById('auth-pin-input');
-            if (input) {
-                input.value = '';
-                setTimeout(() => input.focus(), 150);
-            }
+            if (input) input.value = '';
+            if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // 收起手機鍵盤
+            installPinKeyListener();
             const subtitle = document.getElementById('auth-modal-subtitle');
             if (subtitle) {
                 subtitle.innerText = customPrompt || '請輸入 4 位數記分員專屬授權密碼';
@@ -2023,6 +2007,21 @@
                 modal.classList.remove('hidden');
                 modal.style.display = 'flex';
             }
+        }
+
+        /** 電腦上可直接用鍵盤輸入數字 / Backspace / Enter / Esc（視窗開著時才作用） */
+        let pinKeyListenerInstalled = false;
+        function installPinKeyListener() {
+            if (pinKeyListenerInstalled) return;
+            pinKeyListenerInstalled = true;
+            document.addEventListener('keydown', (ev) => {
+                const modal = document.getElementById('auth-modal');
+                if (!modal || modal.classList.contains('hidden')) return;
+                if (/^[0-9]$/.test(ev.key)) { ev.preventDefault(); handlePinInput(ev.key); }
+                else if (ev.key === 'Backspace') { ev.preventDefault(); deletePinInput(); }
+                else if (ev.key === 'Enter') { ev.preventDefault(); verifyScorekeeperPin(); }
+                else if (ev.key === 'Escape') { closeAuthModal(); }
+            });
         }
 
         function closeAuthModal() {
@@ -2194,23 +2193,30 @@
         // 畫面切換與核心渲染引擎
         // ==========================================
         function navigateTo(view) {
-            if (view === 'scorekeeper' && !isScorekeeperAuthenticated) {
+            // 每次進入記分員端都要重新輸入密碼（不沿用先前登入）
+            if (view === 'scorekeeper' && currentView !== 'scorekeeper') {
+                setAuthState(null, '');
                 openAuthModal('🔑 進入記分員端需輸入授權密碼：', () => {
                     currentView = 'scorekeeper';
                     renderCurrentView();
+                    window.scrollTo({ top: 0 });
                 });
                 return;
             }
-            if (view === 'admin' && isAssistantScorekeeper) {
-                showToast('❌ 助理計分員無權限進入賽事管理後台', 'error');
-                return;
-            }
-            if (view === 'admin' && !isScorekeeperAuthenticated) {
-                openAuthModal('🔑 進入賽事管理後台需輸入授權密碼：', () => {
+            // 每次進入管理後台都要重新輸入「管理計分員」密碼
+            if (view === 'admin' && currentView !== 'admin') {
+                setAuthState(null, '');
+                openAuthModal('🔑 進入賽事管理後台需輸入【管理計分員】密碼：', () => {
+                    if (isAssistantScorekeeper) { showToast('❌ 助理計分員無權限進入賽事管理後台', 'error'); setAuthState(null, ''); return; }
                     currentView = 'admin';
                     renderCurrentView();
+                    window.scrollTo({ top: 0 });
                 });
                 return;
+            }
+            // 離開記分員端 / 後台回到主選單或其他頁面 → 立即登出
+            if (view !== currentView && (currentView === 'scorekeeper' || currentView === 'admin' || view === 'home')) {
+                setAuthState(null, '');
             }
 
             currentView = view;
