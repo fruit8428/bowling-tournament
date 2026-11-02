@@ -517,7 +517,7 @@
         let TOTAL_LANES = 40;
         let PLAYERS_PER_LANE = 4;
         let FEMALE_BONUS = 12;              // 女子「每局」加分（比賽辦法：不分年齡，每局加 12 分）
-        let OCR_ENABLED = false;            // 拍照辨識登錄：預設關閉，由管理後台開關（設定鍵 ocr_enabled）
+        let OCR_ENABLED = true;             // 拍照辨識登錄：預設開啟，由管理後台開關（設定鍵 ocr_enabled，'0' 關閉）
         let EVENT_NAME = '保齡球聯誼賽';
         let currentOcrFile = null;
 
@@ -687,7 +687,7 @@
                 const n = parseInt(settings.total_lanes, 10);
                 if (!isNaN(n) && n >= 1 && n <= 60) TOTAL_LANES = n;
             }
-            if (settings.ocr_enabled !== undefined) OCR_ENABLED = String(settings.ocr_enabled) === '1';
+            if (settings.ocr_enabled !== undefined) OCR_ENABLED = String(settings.ocr_enabled) !== '0';
             document.title = `${EVENT_NAME} — 即時計分看板`;
         }
 
@@ -1281,8 +1281,10 @@
                     result = await apiPost('recognize', { lane: curSelectedLane, game: curSelectedGame, image: dataUrl }, { silent: true });
                 } catch (e) {
                     aiError = e.network ? '網路連線失敗，無法進行 AI 辨識' : (e.message || 'AI 辨識失敗');
+                    // 辨識失敗但照片可能已經備份成功，把備份狀態帶進核對視窗
+                    if (e.data && e.data.backup) result = { backup: e.data.backup, scores: [], turkeys: null, flowers: null, _failed: true };
                 }
-                buildOcrDataAndRender(result, aiError, curSelectedLane, curSelectedGame);
+                buildOcrDataAndRender(result && result._failed ? null : result, aiError, curSelectedLane, curSelectedGame, result ? result.backup : null);
             } catch (err) {
                 content.innerHTML = `
                     <div class="py-8 text-center space-y-4">
@@ -1298,7 +1300,7 @@
         }
 
         /** 把 AI 結果（或失敗）組成核對視窗的資料；AI 沒讀到的欄位留空讓記分員手動填 */
-        function buildOcrDataAndRender(result, aiError, selectedLane, selectedGame) {
+        function buildOcrDataAndRender(result, aiError, selectedLane, selectedGame, backupOverride = null) {
             let detectedLane = result ? parseInt(result.detectedLane, 10) : NaN;
             if (isNaN(detectedLane) || detectedLane < 1 || detectedLane > TOTAL_LANES) detectedLane = selectedLane;
             const targetLane = detectedLane;
@@ -1342,6 +1344,7 @@
                 confidence: result ? (result.confidence || 0.9) : 0,
                 message: result ? (result.message || 'AI 已讀取計分板') : aiError,
                 aiError: aiError || '',
+                backup: backupOverride || (result && result.backup) || null,   // 照片備份結果 { saved, path, label }
                 players: playersList
             };
             renderOcrResultModal(currentOcrData, currentOcrPhotoUrl);
@@ -1381,18 +1384,79 @@
             const btn = document.getElementById('ocr-confirm-btn');
             if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span> 儲存中...'; }
             try {
-                const r = await apiPost('scores', { lane: targetLane, game, players: playersToSave });
+                const photoPath = currentOcrData.backup && currentOcrData.backup.saved ? currentOcrData.backup.path : undefined;
+                const r = await apiPost('scores', { lane: targetLane, game, players: playersToSave, photoPath });
                 if (r.players) lanesData[targetLane] = r.players;
                 dirtyLanes.delete(targetLane);
                 skSelectedLane = String(targetLane);
-                skSelectedGame = String(game);
+                skSelectedGame = '';   // 存完清掉局數，下一次必須重新點選
                 closeOcrModal();
                 renderCurrentView();
-                showToast(`✅ 第 ${targetLane} 球道第 ${game} 局成績已儲存！全場即時同步`, 'success');
+                showToast(`✅ 第 ${targetLane} 球道第 ${game} 局成績已儲存！全場即時同步${r.photo && r.photo.path ? `，照片存為 ${r.photo.label}` : ''}`, 'success');
             } catch (e) {
                 if (btn) { btn.disabled = false; btn.innerHTML = `<span>🚀</span> 確認載入【第 ${targetLane} 球道】成績並儲存`; }
             }
         }
+        // ==========================================
+        // 管理後台：計分板照片備份查驗
+        // ==========================================
+        async function loadPhotoBackups() {
+            const box = document.getElementById('photo-backup-list');
+            if (!box) return;
+            if (!isScorekeeperAuthenticated || isAssistantScorekeeper) { showToast('❌ 只有管理計分員可以查看照片備份', 'error'); return; }
+            const lane = document.getElementById('photo-lane-filter')?.value || '';
+            const history = (document.getElementById('photo-history-filter')?.value || 'latest') === 'history';
+            box.innerHTML = '<span class="text-slate-400">⏳ 讀取中...</span>';
+            try {
+                const r = await apiPost('photos', { mode: 'list', lane: lane || undefined, history });
+                const photos = r.photos || [];
+                if (!photos.length) { box.innerHTML = '<span class="text-slate-400">目前沒有符合條件的照片備份（記分員拍照辨識後才會產生）。</span>'; return; }
+                const fmtTime = iso => { if (!iso) return '-'; const d = new Date(iso); return isNaN(d) ? '-' : d.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false }); };
+                const fmtSize = n => n ? (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB') : '-';
+                box.innerHTML = `
+                    <div class="text-xs text-slate-500 mb-2">共 ${photos.length} 張${history ? '（歷史留存，含重拍）' : ''}</div>
+                    <div class="overflow-x-auto rounded-2xl border border-slate-200">
+                        <table class="w-full text-xs">
+                            <thead class="bg-slate-100 text-slate-700">
+                                <tr><th class="p-2.5 text-left">檔名</th><th class="p-2.5 text-center">球道</th><th class="p-2.5 text-center">局</th><th class="p-2.5 text-left">${history ? '拍攝時間' : '最後更新'}</th><th class="p-2.5 text-right">大小</th><th class="p-2.5 text-center">操作</th></tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                ${photos.map(p => `
+                                    <tr class="hover:bg-blue-50/50">
+                                        <td class="p-2.5 font-mono font-bold text-slate-900">${p.label}${p.stamp ? `<span class="text-slate-400 font-normal">（${p.stamp}）</span>` : ''}</td>
+                                        <td class="p-2.5 text-center font-black">${p.lane}</td>
+                                        <td class="p-2.5 text-center font-black">${p.game}</td>
+                                        <td class="p-2.5 text-slate-600">${p.stamp ? p.stamp.replace(/(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/, '$1/$2/$3 $4:$5:$6') : fmtTime(p.updated_at)}</td>
+                                        <td class="p-2.5 text-right text-slate-600">${fmtSize(p.size)}</td>
+                                        <td class="p-2.5 text-center whitespace-nowrap">
+                                            <button onclick="openPhotoBackup('${p.path}', false)" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 rounded-lg font-black transition-all">👁️ 查看</button>
+                                            <button onclick="openPhotoBackup('${p.path}', true)" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white border border-emerald-200 rounded-lg font-black transition-all ml-1">⬇️ 下載</button>
+                                        </td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            } catch (e) {
+                box.innerHTML = `<span class="text-rose-600">讀取失敗：${e.message || e}</span>`;
+            }
+        }
+
+        /** 取得簽名網址後開新分頁（查看）或觸發下載；網址 60 分鐘內有效 */
+        async function openPhotoBackup(path, download = false) {
+            try {
+                const r = await apiPost('photos', { mode: 'url', path });
+                if (!r.url) return;
+                if (download) {
+                    const a = document.createElement('a');
+                    a.href = r.url; a.download = r.label || '照片.JPG'; a.target = '_blank';
+                    document.body.appendChild(a); a.click(); a.remove();
+                } else {
+                    // 查看：去掉強制下載參數，直接在新分頁顯示圖片
+                    window.open(r.url.replace(/[?&]download=[^&]*/, m => m.startsWith('?') ? '?' : ''), '_blank');
+                }
+            } catch (e) {}
+        }
+
         // ==========================================
         // 管理後台：設定、名冊匯入、廣播、重置
         // ==========================================
@@ -2863,6 +2927,9 @@
                             ⚠️ AI 辨識失敗：${data.aiError}<br>請直接在下方手動輸入 4 位選手分數後儲存。
                         </div>
                     ` : ''}
+                    ${data.backup ? (data.backup.saved
+                        ? `<div class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-bold">📁 照片已備份到雲端：<span class="font-mono text-slate-900">${data.backup.label}</span>（儲存成績時若改了球道或局數，檔名會自動跟著改）</div>`
+                        : `<div class="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-bold">⚠️ 照片備份失敗（${data.backup.error || '未知原因'}），分數仍可正常登錄，請通知管理員。</div>`) : ''}
                     
                     <!-- 辨識成果與球道核對橫幅 (友善提示，絕不阻止載入) -->
                     ${laneMatched ? `
@@ -4178,8 +4245,8 @@
                                     <label class="block text-xs font-black text-slate-700 mb-1.5 flex items-center gap-1">📸 拍照辨識登錄功能</label>
                                     <div class="flex flex-col sm:flex-row sm:items-center gap-2">
                                         <select id="setting-ocr-enabled" class="bg-slate-50 border-2 ${OCR_ENABLED ? 'border-emerald-400 text-emerald-700' : 'border-slate-300 text-slate-600'} rounded-xl p-2.5 text-sm font-black outline-none">
+                                            <option value="1" ${OCR_ENABLED ? 'selected' : ''}>✅ 開啟（預設；記分員可拍照辨識，照片自動備份）</option>
                                             <option value="0" ${OCR_ENABLED ? '' : 'selected'}>⏸️ 關閉（按鈕反白、只能看不能用）</option>
-                                            <option value="1" ${OCR_ENABLED ? 'selected' : ''}>✅ 開啟（記分員可拍照自動辨識分數）</option>
                                         </select>
                                         <span class="text-[11px] text-slate-400">目前狀態：<b class="${OCR_ENABLED ? 'text-emerald-700' : 'text-slate-600'}">${OCR_ENABLED ? '已開啟' : '已關閉'}</b>。改完記得按右下「儲存設定」，所有記分員手機會立即套用。</span>
                                     </div>
@@ -4197,7 +4264,33 @@
                             </div>
                         </div>
 
-                        <!-- 4. 資料重置與清除 -->
+                        <!-- 4. 計分板照片備份查驗 -->
+                        <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-4">
+                            <h2 class="text-xl font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+                                <span>📷</span> 計分板照片備份查驗
+                            </h2>
+                            <p class="text-xs text-slate-500 font-medium">記分員每次拍照辨識，照片都會自動備份成「第x球道第x局.JPG」。同一道同一局重拍會覆蓋「最新」版本，但每一張都另外保留在歷史紀錄中。</p>
+                            <div class="flex flex-wrap items-end gap-3">
+                                <label class="block">
+                                    <span class="text-[11px] font-black text-slate-600">球道</span>
+                                    <select id="photo-lane-filter" class="mt-1 bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-bold outline-none">
+                                        <option value="">全部球道</option>
+                                        ${Array.from({ length: TOTAL_LANES }, (_, i) => `<option value="${i + 1}">第 ${i + 1} 道</option>`).join('')}
+                                    </select>
+                                </label>
+                                <label class="block">
+                                    <span class="text-[11px] font-black text-slate-600">範圍</span>
+                                    <select id="photo-history-filter" class="mt-1 bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-bold outline-none">
+                                        <option value="latest">每道每局最新一張</option>
+                                        <option value="history">所有歷史留存（含重拍）</option>
+                                    </select>
+                                </label>
+                                <button onclick="loadPhotoBackups()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 active:scale-95 text-white font-black text-sm rounded-xl transition-all shadow-md">🔍 查詢照片</button>
+                            </div>
+                            <div id="photo-backup-list" class="text-sm text-slate-500 font-bold">按「查詢照片」載入清單。</div>
+                        </div>
+
+                        <!-- 5. 資料重置與清除 -->
                         <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-4">
                             <h2 class="text-xl font-black text-rose-600 flex items-center gap-2 border-b border-slate-100 pb-3">
                                 <span>⚠️</span> 資料維護與重置操作

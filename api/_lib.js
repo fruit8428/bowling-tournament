@@ -168,7 +168,73 @@ function rowToPlayer(row) {
     };
 }
 
+// ==========================================
+// 計分板照片備份（Supabase Storage 私有 bucket）
+//   儲存鍵用英數（避免物件名稱相容問題），顯示與下載檔名一律是「第x球道第x局.JPG」
+//   - 最新一張：lane-01/game-2.JPG（同球道同局重拍會覆蓋）
+//   - 歷史留存：history/lane-01-game-2_20261205-143012.JPG（每一張都保留，供查驗）
+// ==========================================
+const PHOTO_BUCKET = process.env.PHOTO_BUCKET || 'bowling-photos';
+
+function photoKey(lane, game) {
+    return `lane-${String(lane).padStart(2, '0')}/game-${game}.JPG`;
+}
+function photoLabel(lane, game) {
+    return `第${lane}球道第${game}局.JPG`;
+}
+/** 從儲存鍵解析出球道與局數；不符合格式回 null */
+function parsePhotoKey(key) {
+    const m = String(key).match(/lane-(\d+)[\/-]game-(\d)(?:_(\d{8}-\d{6}))?\.JPG$/i);
+    if (!m) return null;
+    return { lane: parseInt(m[1], 10), game: parseInt(m[2], 10), stamp: m[3] || null };
+}
+function taipeiStamp(d = new Date()) {
+    const parts = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        .formatToParts(d).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+    return `${parts.year}${parts.month}${parts.day}-${parts.hour.replace('24', '00')}${parts.minute}${parts.second}`;
+}
+
+let _bucketReady = false;
+async function ensurePhotoBucket(sb) {
+    if (_bucketReady) return;
+    const { data } = await sb.storage.getBucket(PHOTO_BUCKET);
+    if (!data) {
+        const { error } = await sb.storage.createBucket(PHOTO_BUCKET, { public: false, fileSizeLimit: 8 * 1024 * 1024 });
+        if (error && !/already exists/i.test(error.message)) throw new Error('建立照片 bucket 失敗: ' + error.message);
+    }
+    _bucketReady = true;
+}
+
+/**
+ * 把一張照片存成「第lane球道第game局」：覆蓋最新版 + 新增一份歷史留存
+ * 回傳 { path, label, historyPath }
+ */
+async function backupPhoto({ lane, game, buffer, mimeType = 'image/jpeg' }) {
+    const sb = getSupabase();
+    await ensurePhotoBucket(sb);
+    const latest = photoKey(lane, game);
+    const hist = `history/lane-${String(lane).padStart(2, '0')}-game-${game}_${taipeiStamp()}.JPG`;
+    const r1 = await sb.storage.from(PHOTO_BUCKET).upload(latest, buffer, { contentType: mimeType, upsert: true });
+    if (r1.error) throw new Error('照片備份失敗: ' + r1.error.message);
+    const r2 = await sb.storage.from(PHOTO_BUCKET).upload(hist, buffer, { contentType: mimeType, upsert: false });
+    if (r2.error) console.warn('[photo] 歷史留存寫入失敗:', r2.error.message);
+    return { path: latest, label: photoLabel(lane, game), historyPath: r2.error ? null : hist };
+}
+
+/** 記分員在核對視窗改了球道/局數 → 把已備份的照片複製到正確名稱 */
+async function relocatePhoto(fromPath, lane, game) {
+    const expected = photoKey(lane, game);
+    if (!fromPath || fromPath === expected) return { path: expected, label: photoLabel(lane, game), moved: false };
+    const sb = getSupabase();
+    const { data, error } = await sb.storage.from(PHOTO_BUCKET).download(fromPath);
+    if (error) throw new Error('讀取原備份照片失敗: ' + error.message);
+    const buffer = Buffer.from(await data.arrayBuffer());
+    const r = await backupPhoto({ lane, game, buffer, mimeType: data.type || 'image/jpeg' });
+    return Object.assign(r, { moved: true, from: fromPath });
+}
+
 module.exports = {
     getSupabase, send, requirePost, getBody, resolveRole, requireRole, logAction,
-    cleanScore, cleanCount, cleanText, cleanGender, cleanIdentity, toPlayerRow, fetchLane, rowToPlayer
+    cleanScore, cleanCount, cleanText, cleanGender, cleanIdentity, toPlayerRow, fetchLane, rowToPlayer,
+    PHOTO_BUCKET, photoKey, photoLabel, parsePhotoKey, backupPhoto, relocatePhoto
 };

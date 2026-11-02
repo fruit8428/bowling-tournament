@@ -1,8 +1,9 @@
 /**
- * POST /api/scores  { pin, lane, game(1~3), players: [ {id, score, turkeys, flowers} ] }
+ * POST /api/scores  { pin, lane, game(1~3), players: [ {id, score, turkeys, flowers} ], photoPath? }
+ *   photoPath：拍照辨識時已備份的照片鍵；若核對時改了球道或局數，會把照片複製成正確的「第x球道第x局.JPG」
  * 只寫入某一局的分數與獎項，不動選手基本資料。管理計分員與助理計分員都可用（拍照辨識登錄走這裡）。
  */
-const { getSupabase, send, requirePost, getBody, requireRole, logAction, cleanScore, cleanCount, fetchLane } = require('./_lib');
+const { getSupabase, send, requirePost, getBody, requireRole, logAction, cleanScore, cleanCount, fetchLane, relocatePhoto } = require('./_lib');
 
 module.exports = async (req, res) => {
     if (!requirePost(req, res)) return;
@@ -36,9 +37,14 @@ module.exports = async (req, res) => {
             const { error } = await sb.from('bowling_players').update(update).eq('lane', lane).eq('player_order', order);
             if (error) throw new Error(error.message);
         }
-        await logAction({ lane, action: 'SCORES_SAVE', details: `G${game} ` + body.players.map((p, i) => `${p.id || i + 1}:${p.score}`).join(','), role });
+        let photo = null;
+        if (body.photoPath) {
+            try { photo = await relocatePhoto(String(body.photoPath), lane, game); }
+            catch (e) { console.warn('[scores] 照片改名失敗:', e.message); photo = { error: e.message }; }
+        }
+        await logAction({ lane, action: 'SCORES_SAVE', details: `G${game} ` + body.players.map((p, i) => `${p.id || i + 1}:${p.score}`).join(',') + (photo && photo.path ? ` photo=${photo.path}` : ''), role });
         const players = await fetchLane(lane);
-        return send(res, 200, { ok: true, lane, game, players });
+        return send(res, 200, { ok: true, lane, game, players, photo });
     } catch (e) {
         return send(res, 500, { ok: false, error: '儲存失敗: ' + e.message });
     }

@@ -6,7 +6,7 @@
  * 所有金鑰只放在伺服器環境變數，前端完全接觸不到。管理計分員與助理計分員皆可使用。
  */
 const { GoogleGenAI, Type } = require('@google/genai');
-const { send, requirePost, getBody, requireRole, logAction, fetchLane, cleanScore } = require('./_lib');
+const { send, requirePost, getBody, requireRole, logAction, fetchLane, cleanScore, backupPhoto } = require('./_lib');
 
 // 依序嘗試的模型（第一個失敗就換下一個）
 const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
@@ -124,7 +124,6 @@ module.exports = async (req, res) => {
 
     const openaiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
     const geminiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_KEY;
-    if (!openaiKey && !geminiKey) return send(res, 503, { ok: false, error: '伺服器尚未設定 AI 金鑰（OPENAI_API_KEY 或 GEMINI_API_KEY），無法使用拍照辨識，請改用手動輸入。' });
 
     const selectedLane = parseInt(body.lane, 10) || 1;
     const selectedGame = parseInt(body.game, 10) || 1;
@@ -134,6 +133,19 @@ module.exports = async (req, res) => {
     const mimeType = match[1];
     const base64 = match[2];
     if (base64.length > 6 * 1024 * 1024) return send(res, 413, { ok: false, error: '照片太大，請重新拍攝（系統會自動壓縮，若仍過大請換較低解析度）' });
+
+    // 不論 AI 辨識成功與否，照片一律先備份成「第x球道第x局.JPG」供日後查驗
+    let backup = { saved: false, error: '' };
+    try {
+        const r = await backupPhoto({ lane: selectedLane, game: selectedGame, buffer: Buffer.from(base64, 'base64'), mimeType });
+        backup = { saved: true, path: r.path, label: r.label, historyPath: r.historyPath };
+    } catch (e) {
+        console.warn('[recognize] 照片備份失敗:', e.message);
+        backup = { saved: false, error: e.message };
+        await logAction({ lane: selectedLane, action: 'PHOTO_BACKUP_FAIL', details: `game=${selectedGame} ${e.message}`, role });
+    }
+
+    if (!openaiKey && !geminiKey) return send(res, 503, { ok: false, backup, error: '伺服器尚未設定 AI 金鑰（OPENAI_API_KEY 或 GEMINI_API_KEY），無法使用拍照辨識，請改用手動輸入。' });
 
     try {
         // 依序嘗試：OpenAI → Gemini（哪個有金鑰就試哪個；前者失敗自動換後者）
@@ -161,10 +173,11 @@ module.exports = async (req, res) => {
         let players = [];
         try { players = await fetchLane(targetLane); } catch (e) { players = []; }
 
-        await logAction({ lane: targetLane, action: 'AI_RECOGNIZE', details: `model=${model} game=${selectedGame} scores=${scores.join(',')} raw=${raw}`, role });
+        await logAction({ lane: targetLane, action: 'AI_RECOGNIZE', details: `model=${model} game=${selectedGame} scores=${scores.join(',')} photo=${backup.path || 'none'} raw=${raw}`, role });
 
         return send(res, 200, {
             ok: true,
+            backup,
             engine: model,
             detectedLane,
             selectedLane,
@@ -183,6 +196,6 @@ module.exports = async (req, res) => {
             ? 'AI 金鑰無效、過期或額度用完，請通知大會管理員更新金鑰；目前請改用手動輸入。'
             : ('AI 辨識失敗：' + e.message);
         await logAction({ lane: selectedLane, action: 'AI_RECOGNIZE_FAIL', details: e.message, role });
-        return send(res, 502, { ok: false, error: msg });
+        return send(res, 502, { ok: false, backup, error: msg });
     }
 };
