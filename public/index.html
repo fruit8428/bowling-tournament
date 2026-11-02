@@ -413,6 +413,94 @@
         </div>
     </div>
 
+    <!-- 管理計分員：編輯選手資料 / 換球道席位 彈窗 -->
+    <div id="player-edit-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+        <div class="bg-white border border-slate-200 rounded-3xl p-5 sm:p-7 max-w-md w-full shadow-2xl space-y-4 relative my-auto">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <span class="text-2xl p-1.5 bg-purple-50 text-purple-600 rounded-xl border border-purple-200">👤</span>
+                    <div class="text-left">
+                        <h3 class="text-lg font-black text-slate-900">編輯選手資料</h3>
+                        <p id="pem-seat-info" class="text-xs text-slate-500 font-bold">第 1 球道 • P1</p>
+                    </div>
+                </div>
+                <button onclick="closePlayerEditModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 font-black text-base flex items-center justify-center transition-colors cursor-pointer">✕</button>
+            </div>
+
+            <!-- 基本資料 -->
+            <div class="grid grid-cols-2 gap-2.5">
+                <label class="block">
+                    <span class="text-[11px] font-black text-slate-600">姓名</span>
+                    <input type="text" id="pem-name" maxlength="50" placeholder="例：王小明" class="mt-1 w-full px-3 py-2 bg-white border-2 border-slate-300 focus:border-purple-500 rounded-xl outline-none text-sm font-bold">
+                </label>
+                <label class="block">
+                    <span class="text-[11px] font-black text-slate-600">職稱（PP / PE / CP…）</span>
+                    <input type="text" id="pem-title" maxlength="30" placeholder="可留白" class="mt-1 w-full px-3 py-2 bg-white border-2 border-slate-300 focus:border-purple-500 rounded-xl outline-none text-sm font-bold uppercase">
+                </label>
+                <label class="block col-span-2">
+                    <span class="text-[11px] font-black text-slate-600">Nickname（社名 / 英文名）</span>
+                    <input type="text" id="pem-nickname" maxlength="50" placeholder="例：Tina" class="mt-1 w-full px-3 py-2 bg-white border-2 border-slate-300 focus:border-purple-500 rounded-xl outline-none text-sm font-bold">
+                </label>
+                <label class="block col-span-2">
+                    <span class="text-[11px] font-black text-slate-600">所屬社</span>
+                    <input type="text" id="pem-club" list="pem-club-list" maxlength="50" placeholder="例：01-2台北逸仙社" class="mt-1 w-full px-3 py-2 bg-white border-2 border-slate-300 focus:border-purple-500 rounded-xl outline-none text-sm font-bold">
+                    <datalist id="pem-club-list"></datalist>
+                </label>
+                <div class="block">
+                    <span class="text-[11px] font-black text-slate-600">性別</span>
+                    <div class="mt-1 grid grid-cols-2 gap-1.5" id="pem-gender-group">
+                        <button type="button" data-val="男" onclick="pemPick('gender','男')" class="py-2 rounded-xl border-2 text-sm font-black transition-all">男</button>
+                        <button type="button" data-val="女" onclick="pemPick('gender','女')" class="py-2 rounded-xl border-2 text-sm font-black transition-all">女</button>
+                    </div>
+                </div>
+                <div class="block">
+                    <span class="text-[11px] font-black text-slate-600">身份</span>
+                    <div class="mt-1 grid grid-cols-3 gap-1" id="pem-identity-group">
+                        <button type="button" data-val="社友" onclick="pemPick('identity','社友')" class="py-2 rounded-xl border-2 text-[11px] font-black transition-all">社友</button>
+                        <button type="button" data-val="寶尊眷" onclick="pemPick('identity','寶尊眷')" class="py-2 rounded-xl border-2 text-[11px] font-black transition-all">寶尊眷</button>
+                        <button type="button" data-val="子女" onclick="pemPick('identity','子女')" class="py-2 rounded-xl border-2 text-[11px] font-black transition-all">子女</button>
+                    </div>
+                </div>
+            </div>
+            <p class="text-[11px] text-slate-500 font-medium -mt-1">女子每局自動加分，請務必確認性別正確。此處修改不會動到已登錄的分數。</p>
+
+            <button type="button" onclick="savePlayerEditModal()" class="w-full py-3 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-sm rounded-2xl shadow-md shadow-purple-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                <span>💾</span> 儲存資料並即時同步全場
+            </button>
+
+            <!-- 換球道 / 調整順序 -->
+            <div id="pem-move-section" class="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2.5">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-black text-slate-800">🔀 換球道 / 調整順序</span>
+                    <span class="text-[10px] text-slate-500 font-bold">分數會跟著人一起移動</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1.5">
+                    <button type="button" onclick="pemMoveRelative(-1)" class="py-2 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-black active:scale-95 cursor-pointer">⬆️ 與上一位互換</button>
+                    <button type="button" onclick="pemMoveRelative(1)" class="py-2 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-black active:scale-95 cursor-pointer">⬇️ 與下一位互換</button>
+                </div>
+                <div class="flex items-end gap-2">
+                    <label class="block flex-1">
+                        <span class="text-[11px] font-black text-slate-600">目標球道</span>
+                        <select id="pem-to-lane" onchange="pemRefreshTargetSeats()" class="mt-1 w-full px-2 py-2 bg-white border-2 border-slate-300 focus:border-purple-500 rounded-xl outline-none text-sm font-bold"></select>
+                    </label>
+                    <label class="block flex-[2]">
+                        <span class="text-[11px] font-black text-slate-600">目標席位（顯示目前是誰）</span>
+                        <select id="pem-to-seat" class="mt-1 w-full px-2 py-2 bg-white border-2 border-slate-300 focus:border-purple-500 rounded-xl outline-none text-sm font-bold"></select>
+                    </label>
+                </div>
+                <button type="button" onclick="pemMoveToTarget()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs rounded-xl transition-all cursor-pointer">
+                    🚚 移到目標席位（若已有人則兩人互換）
+                </button>
+            </div>
+
+            <!-- 清空席位（兩段式確認，避免誤按） -->
+            <div class="flex items-center justify-between text-xs pt-1 px-1">
+                <button type="button" id="pem-clear-btn" onclick="pemClearSeat()" class="text-rose-600 hover:text-rose-800 font-bold underline cursor-pointer">🗑️ 清空此席位（含分數）</button>
+                <button type="button" onclick="closePlayerEditModal()" class="text-slate-400 hover:text-slate-600 font-bold cursor-pointer">取消返回</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 主應用容器 -->
     <div id="app" class="min-h-screen"></div>
 
@@ -455,6 +543,9 @@
         let currentEnteredPin = '';
         let authSuccessCallback = null;
         let currentEditingTarget = null;    // { lane, pId, player }
+        let pemTarget = null;               // 編輯選手彈窗目前的席位 { lane, pId }
+        let pemDraft = { gender: '男', identity: '社友' };
+        let pemClearArmed = false;          // 清空席位的兩段式確認
         let qrTargetRole = 'spectator';     // 'spectator' | 'scorekeeper'
 
         // 記分員端狀態
@@ -1601,6 +1692,157 @@
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '參賽名單');
             XLSX.writeFile(wb, '地區保齡球參賽名單範本.xlsx');
+        }
+
+        // ==========================================
+        // 管理計分員：編輯選手資料 / 換球道席位 彈窗
+        // ==========================================
+        function openPlayerEditModal(lane, pId) {
+            if (isAssistantScorekeeper) { showToast('❌ 助理計分員無修改選手資料權限', 'error'); return; }
+            if (!isScorekeeperAuthenticated) {
+                openAuthModal('🔑 修改選手資料需要【管理計分員】密碼：', () => openPlayerEditModal(lane, pId));
+                return;
+            }
+            lane = parseInt(lane, 10); pId = parseInt(pId, 10);
+            const player = lanesData[lane]?.find(p => String(p.id) === String(pId));
+            if (!player) return;
+            pemTarget = { lane, pId };
+            pemDraft = { gender: player.gender === '女' ? '女' : '男', identity: player.identity || '社友' };
+            pemClearArmed = false;
+
+            const hasName = !!((player.name && player.name.trim()) || (player.nickname && player.nickname.trim()));
+            const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+            setVal('pem-name', player.name); setVal('pem-title', player.title);
+            setVal('pem-nickname', player.nickname); setVal('pem-club', player.club);
+            document.getElementById('pem-seat-info').innerText = `第 ${lane} 球道 • P${pId}` + (hasName ? ` ${player.name || player.nickname}` : '（目前空位，可新增選手）');
+            document.querySelector('#player-edit-modal h3').innerText = hasName ? '編輯選手資料' : '新增選手到此空位';
+            pemPaintChoices();
+
+            // 所屬社下拉提示：把目前名冊裡出現過的社名整理成清單
+            const clubs = new Set();
+            Object.values(lanesData).forEach(list => (list || []).forEach(p => { if (p.club) clubs.add(p.club); }));
+            const dl = document.getElementById('pem-club-list');
+            if (dl) dl.innerHTML = [...clubs].sort().map(c => `<option value="${escapeAttr(c)}"></option>`).join('');
+
+            // 移動區：空位沒有人可以搬，隱藏
+            const moveSec = document.getElementById('pem-move-section');
+            if (moveSec) moveSec.style.display = hasName ? '' : 'none';
+            const clearBtn = document.getElementById('pem-clear-btn');
+            if (clearBtn) { clearBtn.style.display = hasName ? '' : 'none'; clearBtn.innerText = '🗑️ 清空此席位（含分數）'; }
+            if (hasName) {
+                const laneSel = document.getElementById('pem-to-lane');
+                let opts = '';
+                for (let l = 1; l <= TOTAL_LANES; l++) opts += `<option value="${l}" ${l === lane ? 'selected' : ''}>第 ${l} 道</option>`;
+                laneSel.innerHTML = opts;
+                pemRefreshTargetSeats();
+            }
+
+            const modal = document.getElementById('player-edit-modal');
+            modal.classList.remove('hidden'); modal.style.display = 'flex';
+            setTimeout(() => { const el = document.getElementById('pem-name'); if (el) el.focus(); }, 150);
+        }
+
+        function closePlayerEditModal() {
+            const modal = document.getElementById('player-edit-modal');
+            if (modal) { modal.classList.add('hidden'); modal.style.display = 'none'; }
+            pemTarget = null; pemClearArmed = false;
+        }
+
+        function escapeAttr(v) {
+            return String(v === null || v === undefined ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function pemPick(field, val) { pemDraft[field] = val; pemPaintChoices(); }
+
+        function pemPaintChoices() {
+            const paint = (groupId, field, onCls) => {
+                document.querySelectorAll(`#${groupId} button`).forEach(b => {
+                    const on = b.dataset.val === pemDraft[field];
+                    b.className = `py-2 rounded-xl border-2 ${groupId.includes('identity') ? 'text-[11px]' : 'text-sm'} font-black transition-all cursor-pointer ` +
+                        (on ? onCls : 'bg-white border-slate-200 text-slate-500 hover:border-slate-400');
+                });
+            };
+            paint('pem-gender-group', 'gender', pemDraft.gender === '女' ? 'bg-pink-100 border-pink-400 text-pink-800' : 'bg-blue-100 border-blue-400 text-blue-800');
+            paint('pem-identity-group', 'identity', 'bg-purple-100 border-purple-400 text-purple-800');
+        }
+
+        /** 依目標球道刷新席位下拉，並顯示每個席位目前是誰 */
+        function pemRefreshTargetSeats() {
+            if (!pemTarget) return;
+            const toLane = parseInt(document.getElementById('pem-to-lane').value, 10);
+            const seatSel = document.getElementById('pem-to-seat');
+            const list = lanesData[toLane] || [1, 2, 3, 4].map(blankPlayer);
+            let firstEmpty = null;
+            seatSel.innerHTML = list.map(p => {
+                const isSelf = toLane === pemTarget.lane && p.id === pemTarget.pId;
+                const who = (p.name && p.name.trim()) || (p.nickname && p.nickname.trim()) || '';
+                if (!who && firstEmpty === null && !isSelf) firstEmpty = p.id;
+                const label = isSelf ? `P${p.id}（目前位置）` : (who ? `P${p.id}：${who}（會互換）` : `P${p.id}：空位`);
+                return `<option value="${p.id}" ${isSelf ? 'disabled' : ''}>${escapeAttr(label)}</option>`;
+            }).join('');
+            // 預設選第一個空位；沒有空位就選第一個不是自己的席位
+            const pick = firstEmpty !== null ? firstEmpty : (list.find(p => !(toLane === pemTarget.lane && p.id === pemTarget.pId)) || {}).id;
+            if (pick) seatSel.value = String(pick);
+        }
+
+        async function pemCallApi(payload, successMsg) {
+            try {
+                const r = await apiPost('player', payload);
+                // 伺服器回傳受影響球道的最新資料，直接覆蓋本機並重畫
+                Object.entries(r.lanes || {}).forEach(([l, players]) => { lanesData[parseInt(l, 10)] = players; dirtyLanes.delete(parseInt(l, 10)); });
+                lastDataSnapshot = '';
+                const affected = Object.keys(r.lanes || {}).map(Number);
+                refreshViewAfterData(affected.length === 1 ? affected[0] : null);
+                showToast(r.message || successMsg, 'success');
+                return r;
+            } catch (e) {
+                return null;   // apiPost 已顯示錯誤提示
+            }
+        }
+
+        async function savePlayerEditModal() {
+            if (!pemTarget) return;
+            const { lane, pId } = pemTarget;
+            const v = id => (document.getElementById(id)?.value || '').trim();
+            const player = { name: v('pem-name'), title: v('pem-title').toUpperCase(), nickname: v('pem-nickname'), club: v('pem-club'), gender: pemDraft.gender, identity: pemDraft.identity };
+            if (!player.name && !player.nickname) { showToast('請至少填寫姓名或 Nickname；要清空席位請用下方「清空此席位」', 'error'); return; }
+            closePlayerEditModal();
+            await pemCallApi({ mode: 'update', lane, id: pId, player }, `✅ 第 ${lane} 道 P${pId} ${player.name || player.nickname} 資料已更新並同步全場`);
+        }
+
+        /** 與上一位 / 下一位互換（同一球道內調整前後順序） */
+        async function pemMoveRelative(dir) {
+            if (!pemTarget) return;
+            const { lane, pId } = pemTarget;
+            const to = pId + dir;
+            if (to < 1 || to > PLAYERS_PER_LANE) { showToast(dir < 0 ? '已經是這一道的第一位' : '已經是這一道的最後一位', 'info'); return; }
+            closePlayerEditModal();
+            await pemCallApi({ mode: 'move', from: { lane, id: pId }, to: { lane, id: to } }, '✅ 順序已調整');
+        }
+
+        async function pemMoveToTarget() {
+            if (!pemTarget) return;
+            const { lane, pId } = pemTarget;
+            const toLane = parseInt(document.getElementById('pem-to-lane').value, 10);
+            const toSeat = parseInt(document.getElementById('pem-to-seat').value, 10);
+            if (isNaN(toLane) || isNaN(toSeat)) { showToast('請選擇目標球道與席位', 'error'); return; }
+            if (toLane === lane && toSeat === pId) { showToast('目標就是目前位置，不需要移動', 'info'); return; }
+            closePlayerEditModal();
+            await pemCallApi({ mode: 'move', from: { lane, id: pId }, to: { lane: toLane, id: toSeat } }, '✅ 已移動');
+        }
+
+        async function pemClearSeat() {
+            if (!pemTarget) return;
+            const btn = document.getElementById('pem-clear-btn');
+            if (!pemClearArmed) {
+                pemClearArmed = true;
+                if (btn) btn.innerText = '⚠️ 再按一次確認清空（姓名與分數都會刪除）';
+                setTimeout(() => { pemClearArmed = false; if (btn && pemTarget) btn.innerText = '🗑️ 清空此席位（含分數）'; }, 4000);
+                return;
+            }
+            const { lane, pId } = pemTarget;
+            closePlayerEditModal();
+            await pemCallApi({ mode: 'clear', lane, id: pId }, `✅ 第 ${lane} 道 P${pId} 已清空`);
         }
 
         // ==========================================
@@ -3133,6 +3375,9 @@
                                     ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) && hasName ? `
                                         <button onclick="openQuickScoreModal(${i}, ${player.id})" class="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white rounded text-[10px] font-black border border-blue-200 transition-all cursor-pointer shadow-2xs" title="計分員修改成績">✏️ 改分</button>
                                     ` : ''}
+                                    ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `
+                                        <button onclick="openPlayerEditModal(${i}, ${player.id})" class="px-1.5 py-0.5 ${hasName ? 'bg-purple-50 hover:bg-purple-600 text-purple-700 border-purple-200' : 'bg-emerald-50 hover:bg-emerald-600 text-emerald-700 border-emerald-200'} hover:text-white rounded text-[10px] font-black border transition-all cursor-pointer shadow-2xs" title="${hasName ? '修改資料 / 換球道' : '新增選手'}">${hasName ? '👤 編輯' : '➕ 新增'}</button>
+                                    ` : ''}
                                 </div>
                                 <div class="text-[11px] text-slate-500 font-medium truncate max-w-[150px]">
                                     ${player.club || '未分配社團'}
@@ -3180,6 +3425,11 @@
                                     ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) && hasName ? `
                                         <button onclick="openQuickScoreModal(${i}, ${player.id})" class="px-2 py-0.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white rounded text-[11px] font-black border border-blue-200 transition-all cursor-pointer shadow-2xs inline-flex items-center gap-0.5 shrink-0" title="計分員修改此選手成績">
                                             <span>✏️</span> 改分
+                                        </button>
+                                    ` : ''}
+                                    ${(isScorekeeperAuthenticated && !isAssistantScorekeeper) ? `
+                                        <button onclick="openPlayerEditModal(${i}, ${player.id})" class="px-2 py-0.5 ${hasName ? 'bg-purple-50 hover:bg-purple-600 text-purple-700 border-purple-200' : 'bg-emerald-50 hover:bg-emerald-600 text-emerald-700 border-emerald-200'} hover:text-white rounded text-[11px] font-black border transition-all cursor-pointer shadow-2xs inline-flex items-center gap-0.5 shrink-0" title="${hasName ? '修改姓名 / 性別 / 社團，或換球道席位' : '在此空位新增選手'}">
+                                            <span>${hasName ? '👤' : '➕'}</span> ${hasName ? '編輯' : '新增'}
                                         </button>
                                     ` : ''}
                                 </div>
